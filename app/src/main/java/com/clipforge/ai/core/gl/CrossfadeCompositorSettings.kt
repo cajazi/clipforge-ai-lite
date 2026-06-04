@@ -51,7 +51,7 @@ class CrossfadeCompositorSettings(
 
     override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
         // inputId 0 = background (clip A): always fully opaque.
-        if (inputId == 0) return backgroundOpaque
+        if (inputId == 0) { android.util.Log.d("CROSSFADE_COMP", "inputId=0 bg ptUs=$presentationTimeUs"); return backgroundOpaque }
 
         // inputId 1 = overlay (clip B): alpha ramps 0 -> 1 across the fade window.
         val alpha: Float = when {
@@ -62,6 +62,7 @@ class CrossfadeCompositorSettings(
                 ((presentationTimeUs - fadeStartUs).toFloat() / span).coerceIn(0f, 1f)
             }
         }
+        android.util.Log.d("CROSSFADE_COMP", "inputId=$inputId ptUs=$presentationTimeUs alpha=$alpha")
         return StaticOverlaySettings.Builder().setAlphaScale(alpha).build()
     }
 }

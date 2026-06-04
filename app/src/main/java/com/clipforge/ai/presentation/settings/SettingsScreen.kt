@@ -23,6 +23,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.core.designsystem.AppSpacing
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +62,46 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.padding(16.dp)
             ) { Text("GL export test") }
+
+            Button(
+                onClick = {
+                    val ctx = glTestCtx
+                    kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                        val projectId = "e69e8294-0529-4a17-a36e-851247a5b96c"
+                        val paths = com.clipforge.ai.core.gl.ProjectExporter.resolveAllVideoPaths(ctx, projectId)
+                        if (paths.size < 2) {
+                            android.widget.Toast.makeText(ctx, "Need 2+ clips (got ${paths.size})", android.widget.Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+                        val durUs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val mmr = android.media.MediaMetadataRetriever()
+                            try {
+                                mmr.setDataSource(paths[0])
+                                val ms = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                                ms * 1000L
+                            } catch (e: Exception) { 0L } finally { mmr.release() }
+                        }
+                        android.util.Log.d("CROSSFADE_TEST", "clipA durUs=$durUs pathA=${paths[0]} pathB=${paths[1]}")
+                        if (durUs <= 0L) {
+                            android.widget.Toast.makeText(ctx, "Could not read clip A duration", android.widget.Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+                        com.clipforge.ai.core.gl.CrossfadeExporter.crossfadeTwoClips(
+                            context = ctx,
+                            pathA = paths[0],
+                            pathB = paths[1],
+                            clipADurationUs = durUs,
+                            crossfadeUs = 1_000_000L,
+                            onProgress = { pct -> android.util.Log.d("CROSSFADE_TEST", "progress=$pct") },
+                            onResult = { r ->
+                                android.util.Log.d("CROSSFADE_TEST", "result=$r")
+                                android.widget.Toast.makeText(ctx, "Crossfade: $r", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }
+                },
+                modifier = Modifier.padding(16.dp)
+            ) { Text("Crossfade test") }
 
             // Account / Pro status card
             Box(

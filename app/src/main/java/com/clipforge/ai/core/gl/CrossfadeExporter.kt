@@ -68,13 +68,16 @@ object CrossfadeExporter {
 
         // Overlap window on the composition timeline:
         //   B's content starts at (clipADurationUs - crossfadeUs) and the fade runs for crossfadeUs.
-        val gapUs = (clipADurationUs - crossfadeUs).coerceAtLeast(0L)
+        val trimMs = 3000L  // TEST: trim both clips short to shrink the gap
+        val effectiveClipADurationUs = trimMs * 1000L
+        val gapUs = (effectiveClipADurationUs - crossfadeUs).coerceAtLeast(0L)
         val fadeStartUs = gapUs
-        val fadeEndUs = clipADurationUs
+        val fadeEndUs = effectiveClipADurationUs
         Log.d(TAG, "START gapUs=$gapUs fadeStartUs=$fadeStartUs fadeEndUs=$fadeEndUs crossfadeUs=$crossfadeUs")
 
-        val itemA = EditedMediaItem.Builder(MediaItem.Builder().setUri(pathToUri(pathA)).build()).build()
-        val itemB = EditedMediaItem.Builder(MediaItem.Builder().setUri(pathToUri(pathB)).build()).build()
+        val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0L).setEndPositionMs(trimMs).build()
+        val itemA = EditedMediaItem.Builder(MediaItem.Builder().setUri(pathToUri(pathA)).setClippingConfiguration(clipping).build()).build()
+        val itemB = EditedMediaItem.Builder(MediaItem.Builder().setUri(pathToUri(pathB)).setClippingConfiguration(clipping).build()).build()
 
         // Background sequence: clip A alone.
         val backgroundSequence = EditedMediaItemSequence.Builder()
@@ -86,6 +89,7 @@ object CrossfadeExporter {
             .addGap(gapUs)
             .addItem(itemB)
             .experimentalSetForceVideoTrack(true)
+            .experimentalSetForceAudioTrack(true)
             .build()
 
         val compositor = CrossfadeCompositorSettings(fadeStartUs, fadeEndUs)
