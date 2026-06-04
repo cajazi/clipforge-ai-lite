@@ -112,7 +112,7 @@ object ProjectExporter {
         }
         Log.d(TAG, "START clips=${editedItems.size} output=${outputFile.absolutePath}")
 
-        val sequence = EditedMediaItemSequence(editedItems)
+        val sequence = EditedMediaItemSequence.Builder(editedItems).build()
         val composition = Composition.Builder(listOf(sequence)).build()
 
         val mainHandler = Handler(Looper.getMainLooper())
