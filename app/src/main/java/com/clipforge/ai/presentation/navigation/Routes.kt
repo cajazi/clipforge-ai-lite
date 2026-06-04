@@ -1,0 +1,36 @@
+package com.clipforge.ai.presentation.navigation
+
+object Routes {
+    const val SPLASH           = "splash"
+    const val LOGIN            = "login"
+    const val REGISTER         = "register"
+    const val FORGOT_PASSWORD  = "forgot_password"
+    const val HOME             = "home"
+    const val CREATE_PROJECT   = "create_project"
+    const val MEDIA_IMPORT     = "media_import/{projectId}"
+    const val UPLOAD_MEDIA     = "upload_media/{projectId}"
+    const val EDITOR           = "editor/{projectId}"
+    const val TIMELINE         = "timeline/{projectId}"
+    const val TRANSITION_PICKER = "transition_picker/{projectId}"
+    const val TRANSITION_PICKER_FOR_CLIP = "transition_picker/{projectId}/{clipId}"
+    const val OVERLAYS         = "overlays/{projectId}"
+    const val TEXT_OVERLAY     = "text_overlay/{projectId}"
+    const val MUSIC            = "music/{projectId}"
+    const val PREVIEW          = "preview/{projectId}"
+    const val EXPORT_PROGRESS  = "export_progress/{projectId}"
+    const val PROJECT_HISTORY  = "project_history"
+    const val SUBSCRIPTION     = "subscription"
+    const val SETTINGS         = "settings"
+
+    fun mediaImport(id: String)    = "media_import/$id"
+    fun uploadMedia(id: String)    = "upload_media/$id"
+    fun editor(id: String)         = "editor/$id"
+    fun timeline(id: String)       = "timeline/$id"
+    fun transitionPicker(id: String, clipId: String? = null) =
+        if (clipId == null) "transition_picker/$id" else "transition_picker/$id/$clipId"
+    fun overlays(id: String)       = "overlays/$id"
+    fun textOverlay(id: String)    = "text_overlay/$id"
+    fun music(id: String)          = "music/$id"
+    fun preview(id: String)        = "preview/$id"
+    fun exportProgress(id: String) = "export_progress/$id"
+}

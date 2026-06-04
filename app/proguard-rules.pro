@@ -1,0 +1,10 @@
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class retrofit2.** { *; }
+-keep interface retrofit2.** { *; }
+-keep class com.google.gson.** { *; }
+-keep class com.clipforge.ai.data.remote.dto.** { *; }
+-keep class androidx.room.** { *; }
+-keep class androidx.media3.** { *; }
+-keep class com.google.android.gms.ads.** { *; }
+-keep class com.android.billingclient.** { *; }

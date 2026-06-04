@@ -1,0 +1,51 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Generated
+bin/
+gen/
+out/
+build/
+**/build/
+
+# Gradle
+.gradle/
+**/.gradle/
+
+# Local config (SDK path + Supabase keys - MUST stay out of git)
+local.properties
+
+# IDE
+*.iml
+.idea/
+*.ipr
+*.iws
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystores (secrets)
+*.jks
+*.keystore
+
+# Kotlin
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session scaffolding / clutter
+*.bak
+*.bak*
+*_test.mp4
+tint_test.mp4
+multiclip_test.mp4
+cf_db.sqlite
+*.sqlite-wal
+*.sqlite-shm
