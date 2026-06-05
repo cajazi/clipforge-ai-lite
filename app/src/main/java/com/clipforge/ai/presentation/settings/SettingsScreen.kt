@@ -67,8 +67,9 @@ fun SettingsScreen(
                 onClick = {
                     val ctx = glTestCtx
                     kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                        val projectId = "e69e8294-0529-4a17-a36e-851247a5b96c"
+                        val projectId = "6bda9039-9806-4e7c-bf64-af949540a4f1"
                         val paths = com.clipforge.ai.core.gl.ProjectExporter.resolveAllVideoPaths(ctx, projectId)
+                        com.clipforge.ai.core.gl.CrossfadeRenderPlan.build(ctx, projectId)
                         if (paths.size < 2) {
                             android.widget.Toast.makeText(ctx, "Need 2+ clips (got ${paths.size})", android.widget.Toast.LENGTH_LONG).show()
                             return@launch
