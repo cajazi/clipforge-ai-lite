@@ -17,23 +17,21 @@ import androidx.media3.transformer.Transformer
 import java.io.File
 
 /**
- * STEP 2 (Option A) - crossfade exporter, TEST HARNESS stage (Gate 4a).
+ * STEP 2 (Option B) - crossfade SEGMENT renderer, TEST HARNESS stage.
  *
- * Proves a true two-clip crossfade baked into an exported MP4, in isolation,
- * before integrating with real timeline data.
+ * The gap-based overlap (Option A) was proven NOT to carry the overlay clip's video
+ * into the compositor on 1.9.0. Option B sidesteps any time-offset:
  *
- * Mechanism (all APIs confirmed against resolved media3 1.9.0 jars):
- *   - Two EditedMediaItemSequences in one Composition.
- *   - Sequence 0 (background) = clip A alone.
- *   - Sequence 1 (overlay)    = a GAP of (clipADurationUs - crossfadeUs) followed
- *                               by clip B, via EditedMediaItemSequence.Builder.addGap().
- *                               The gap delays B so its content overlaps A's tail.
- *   - Composition.setVideoCompositorSettings(CrossfadeCompositorSettings) drives
- *     per-frame alpha on the overlay during the overlap window.
+ *   - Render ONLY the short crossfade SEGMENT, where both clips start at t=0:
+ *       * background sequence = clip A's LAST crossfade seconds
+ *       * overlay sequence    = clip B's FIRST crossfade seconds
+ *     Both carry real video from frame 0, so the compositor (proven to drive a
+ *     correct alpha ramp) can actually blend them.
+ *   - The whole segment IS the fade window [0, crossfadeUs].
  *
- * IMPORTANT - this harness needs clip A's duration in microseconds to size the gap.
- * For the test we pass it in explicitly (clipADurationUs). In 4b integration we'll
- * read real durations from the timeline.
+ * Full feature (next step, after this segment is confirmed):
+ *     [clip A minus tail] + [crossfade segment] + [clip B minus head]
+ * concatenated via the already-proven multi-clip export.
  */
 @UnstableApi
 object CrossfadeExporter {
@@ -49,10 +47,10 @@ object CrossfadeExporter {
         if (path.startsWith("/")) Uri.fromFile(File(path)) else Uri.parse(path)
 
     /**
-     * Crossfade two clips. Must be called on the main thread (Transformer needs a Looper).
+     * Renders just the crossfade segment between two clips. Main thread only.
      *
-     * @param clipADurationUs full duration of clip A in microseconds (needed to size the gap).
-     * @param crossfadeUs     length of the crossfade overlap in microseconds.
+     * @param clipADurationUs full duration of clip A in microseconds (to locate its tail).
+     * @param crossfadeUs     length of the crossfade in microseconds.
      */
     fun crossfadeTwoClips(
         context: Context,
@@ -66,30 +64,35 @@ object CrossfadeExporter {
         val outputFile = File(context.getExternalFilesDir(null), "crossfade_${System.currentTimeMillis()}.mp4")
         if (outputFile.exists()) outputFile.delete()
 
-        // Overlap window on the composition timeline:
-        //   B's content starts at (clipADurationUs - crossfadeUs) and the fade runs for crossfadeUs.
-        val trimMs = 3000L  // TEST: trim both clips short to shrink the gap
-        val effectiveClipADurationUs = trimMs * 1000L
-        val gapUs = (effectiveClipADurationUs - crossfadeUs).coerceAtLeast(0L)
-        val fadeStartUs = gapUs
-        val fadeEndUs = effectiveClipADurationUs
-        Log.d(TAG, "START gapUs=$gapUs fadeStartUs=$fadeStartUs fadeEndUs=$fadeEndUs crossfadeUs=$crossfadeUs")
+        val crossfadeMs = crossfadeUs / 1000L
+        val clipADurationMs = clipADurationUs / 1000L
+        val aTailStartMs = (clipADurationMs - crossfadeMs).coerceAtLeast(0L)
+        val fadeStartUs = 0L
+        val fadeEndUs = crossfadeUs
+        Log.d(TAG, "START B-SEGMENT aTailStartMs=$aTailStartMs clipADurationMs=$clipADurationMs crossfadeMs=$crossfadeMs")
 
-        val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0L).setEndPositionMs(trimMs).build()
-        val itemA = EditedMediaItem.Builder(MediaItem.Builder().setUri(pathToUri(pathA)).setClippingConfiguration(clipping).build()).build()
-        val itemB = EditedMediaItem.Builder(MediaItem.Builder().setUri(pathToUri(pathB)).setClippingConfiguration(clipping).build()).build()
+        val clipAClip = MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(aTailStartMs)
+            .setEndPositionMs(clipADurationMs)
+            .build()
+        val clipBClip = MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(0L)
+            .setEndPositionMs(crossfadeMs)
+            .build()
 
-        // Background sequence: clip A alone.
+        val itemA = EditedMediaItem.Builder(
+            MediaItem.Builder().setUri(pathToUri(pathA)).setClippingConfiguration(clipAClip).build()
+        ).build()
+        val itemB = EditedMediaItem.Builder(
+            MediaItem.Builder().setUri(pathToUri(pathB)).setClippingConfiguration(clipBClip).build()
+        ).build()
+
         val backgroundSequence = EditedMediaItemSequence.Builder()
             .addItem(itemA)
             .build()
 
-        // Overlay sequence: gap (to delay B) + clip B.
         val overlaySequence = EditedMediaItemSequence.Builder()
-            .addGap(gapUs)
             .addItem(itemB)
-            .experimentalSetForceVideoTrack(true)
-            .experimentalSetForceAudioTrack(true)
             .build()
 
         val compositor = CrossfadeCompositorSettings(fadeStartUs, fadeEndUs)
