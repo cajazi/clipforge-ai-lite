@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -73,6 +74,21 @@ object CrossfadeExecutor {
         }
     }
 
+    private fun logVideoInfo(tag2: String, path: String) {
+        val mmr = MediaMetadataRetriever()
+        try {
+            mmr.setDataSource(path)
+            val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val rot = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            Log.d(TAG, "VINFO " + tag2 + " " + path.substringAfterLast('/') + " w=" + w + " h=" + h + " rotation=" + rot)
+        } catch (e: Exception) {
+            Log.d(TAG, "VINFO " + tag2 + " failed: " + e.message)
+        } finally {
+            try { mmr.release() } catch (_: Exception) {}
+        }
+    }
+
     /**
      * GENERALIZED entry: walk the whole render plan, build all crossfade segments with
      * correct cumulative composition offsets, concatenate, render. Handles any number of
@@ -105,6 +121,7 @@ object CrossfadeExecutor {
                 when (op) {
                     is CrossfadeRenderPlan.Op.PlainClip -> {
                         val durMs = (op.endMs - op.startMs).coerceAtLeast(0L)
+                        logVideoInfo("plain", op.path)
                         items.add(EditedMediaItem.Builder(clip(op.path, op.startMs, op.endMs)).build())
                         Log.d(TAG, "PLAIN ${op.path.substringAfterLast('/')} [${op.startMs}..${op.endMs}] @t=$runningTimeMs dur=$durMs")
                         runningTimeMs += durMs
@@ -140,7 +157,8 @@ object CrossfadeExecutor {
         Log.d(TAG, "built ${items.size} items, ${caches.size} crossfade caches, totalTime=${runningTimeMs}ms - starting transformer")
 
         val sequence = EditedMediaItemSequence.Builder(items).build()
-        val composition = Composition.Builder(listOf(sequence)).build()
+        val outputEffects = Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(720, 1280, Presentation.LAYOUT_SCALE_TO_FIT)))
+        val composition = Composition.Builder(listOf(sequence)).setEffects(outputEffects).build()
 
         val mainHandler = Handler(Looper.getMainLooper())
 

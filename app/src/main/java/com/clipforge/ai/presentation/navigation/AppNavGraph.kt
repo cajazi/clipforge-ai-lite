@@ -84,7 +84,7 @@ fun AppNavGraph(navController: NavHostController) {
                 projectId      = id,
                 onBack         = { navController.popBackStack() },
                 onAddText      = { navController.navigate(Routes.textOverlay(id)) },
-                onExport       = { navController.navigate(Routes.exportProgress(id)) },
+                onExport       = { navController.navigate(Routes.exportProgress(id)) { launchSingleTop = true } },
                 onAddMusic     = { navController.navigate(Routes.music(id)) },
                 onAddOverlay   = { navController.navigate(Routes.overlays(id)) },
                 onAddTransition = {
@@ -110,7 +110,7 @@ fun AppNavGraph(navController: NavHostController) {
                 onTextOverlay = { navController.navigate(Routes.textOverlay(id)) },
                 onMusic       = { navController.navigate(Routes.music(id)) },
                 onPreview     = { navController.navigate(Routes.preview(id)) },
-                onExport      = { navController.navigate(Routes.exportProgress(id)) },
+                onExport      = { navController.navigate(Routes.exportProgress(id)) { launchSingleTop = true } },
                 onBack        = { navController.popBackStack() })
         }
         composable(

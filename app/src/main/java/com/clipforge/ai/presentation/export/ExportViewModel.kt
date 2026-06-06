@@ -1,10 +1,12 @@
 package com.clipforge.ai.presentation.export
 
 import android.app.Application
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
+import com.clipforge.ai.core.gl.CrossfadeExecutor
 import com.clipforge.ai.core.gl.ProjectExporter
 import com.clipforge.ai.core.network.NetworkMonitor
 import com.clipforge.ai.core.storage.UserPreferencesManager
@@ -30,13 +32,17 @@ data class ExportUiState(
 
 class ExportViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        // Guards against duplicate concurrent exports of the same project, even if
+        // more than one ExportViewModel instance is created (e.g. screen recreated).
+        private val activeExports = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    }
+
     private val prefsManager   = UserPreferencesManager(application)
     private val networkMonitor = NetworkMonitor(application)
 
     private val _uiState = MutableStateFlow(ExportUiState())
     val uiState: StateFlow<ExportUiState> = _uiState.asStateFlow()
-
-    private var started = false
 
     init {
         observeNetwork()
@@ -50,11 +56,15 @@ class ExportViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Called once by the screen with the real projectId. Runs a real on-device export. */
+    /** Called by the screen with the real projectId. Runs a real on-device export
+     *  through the crossfade-aware timeline renderer (handles plain clips AND dissolves). */
     @OptIn(UnstableApi::class)
     fun startExport(projectId: String) {
-        if (started) return
-        started = true
+        Log.d("EXPORT", "startExport project=$projectId active=${activeExports.contains(projectId)}")
+        if (!activeExports.add(projectId)) {
+            Log.d("EXPORT", "duplicate export ignored for $projectId")
+            return
+        }
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
@@ -67,6 +77,7 @@ class ExportViewModel(application: Application) : AndroidViewModel(application) 
             val paths = ProjectExporter.resolveAllVideoPaths(ctx, projectId)
 
             if (paths.isEmpty()) {
+                activeExports.remove(projectId)
                 _uiState.value = _uiState.value.copy(
                     status = RenderJobStatus.FAILED,
                     statusMessage = "No video clip found to export",
@@ -75,15 +86,17 @@ class ExportViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
+            // Preparing message during the (currently slow) crossfade frame pre-extraction,
+            // so the UI shows activity instead of a frozen 0%.
             _uiState.value = _uiState.value.copy(
                 status = RenderJobStatus.RENDERING,
-                statusMessage = "Rendering video...",
+                statusMessage = "Preparing transitions...",
                 progressPercent = 0
             )
 
-            ProjectExporter.exportProject(
+            CrossfadeExecutor.renderProjectTimeline(
                 context = ctx,
-                paths = paths,
+                projectId = projectId,
                 onProgress = { pct ->
                     _uiState.value = _uiState.value.copy(
                         progressPercent = pct,
@@ -92,7 +105,8 @@ class ExportViewModel(application: Application) : AndroidViewModel(application) 
                 },
                 onResult = { result ->
                     when (result) {
-                        is ProjectExporter.Result.Done -> {
+                        is CrossfadeExecutor.Result.Done -> {
+                            activeExports.remove(projectId)
                             val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                             viewModelScope.launch { prefsManager.incrementDailyExport(today) }
                             _uiState.value = _uiState.value.copy(
@@ -102,11 +116,13 @@ class ExportViewModel(application: Application) : AndroidViewModel(application) 
                                 outputUrl = result.outputPath
                             )
                         }
-                        is ProjectExporter.Result.Error -> {
+                        is CrossfadeExecutor.Result.Error -> {
+                            activeExports.remove(projectId)
+                            Log.e("EXPORT", "Export failed: ${result.message}")
                             _uiState.value = _uiState.value.copy(
                                 status = RenderJobStatus.FAILED,
                                 statusMessage = "Export failed",
-                                errorMessage = result.message
+                                errorMessage = "Something went wrong while rendering. Please try again."
                             )
                         }
                     }
