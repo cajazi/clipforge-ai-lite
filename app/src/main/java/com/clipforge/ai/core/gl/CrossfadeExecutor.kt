@@ -19,6 +19,8 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.clipforge.ai.data.local.database.ClipForgeDatabase
+import com.clipforge.ai.domain.model.AspectRatio
+import com.clipforge.ai.domain.model.ExportQuality
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -94,6 +96,22 @@ object CrossfadeExecutor {
      * correct cumulative composition offsets, concatenate, render. Handles any number of
      * clips and dissolve boundaries. Must be called from a coroutine on Main.
      */
+    /** Map a project's stored aspectRatio + exportQuality strings to even output dims.
+     *  Short side = quality (720/1080); long side derived from the ratio. Defaults 720x1280. */
+    private fun outputDimensions(aspectRatioName: String?, exportQualityName: String?): Pair<Int, Int> {
+        val ratio = try { AspectRatio.valueOf(aspectRatioName ?: "") } catch (_: Exception) { AspectRatio.RATIO_9_16 }
+        val quality = try { ExportQuality.valueOf(exportQualityName ?: "") } catch (_: Exception) { ExportQuality.QUALITY_720P }
+        val shortSide = quality.height // 720 or 1080
+        val wR = ratio.widthRatio
+        val hR = ratio.heightRatio
+        var w: Int
+        var h: Int
+        if (wR <= hR) { w = shortSide; h = shortSide * hR / wR } // portrait/square
+        else { h = shortSide; w = shortSide * wR / hR }          // landscape
+        w = (w / 2) * 2
+        h = (h / 2) * 2
+        return w to h
+    }
     suspend fun renderProjectTimeline(
         context: Context,
         projectId: String,
@@ -101,6 +119,9 @@ object CrossfadeExecutor {
         onResult: (Result) -> Unit
     ) {
         val ops = CrossfadeRenderPlan.build(context, projectId)
+        val projectRow = try { ClipForgeDatabase.getInstance(context).projectDao().getProjectById(projectId) } catch (_: Exception) { null }
+        val (outW, outH) = outputDimensions(projectRow?.aspectRatio, projectRow?.exportQuality)
+        Log.d(TAG, "output dims ${outW}x${outH} from aspect=${projectRow?.aspectRatio} quality=${projectRow?.exportQuality}")
         if (ops.isEmpty()) {
             onResult(Result.Error("empty render plan"))
             return
@@ -157,7 +178,7 @@ object CrossfadeExecutor {
         Log.d(TAG, "built ${items.size} items, ${caches.size} crossfade caches, totalTime=${runningTimeMs}ms - starting transformer")
 
         val sequence = EditedMediaItemSequence.Builder(items).build()
-        val outputEffects = Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(720, 1280, Presentation.LAYOUT_SCALE_TO_FIT)))
+        val outputEffects = Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT)))
         val composition = Composition.Builder(listOf(sequence)).setEffects(outputEffects).build()
 
         val mainHandler = Handler(Looper.getMainLooper())
