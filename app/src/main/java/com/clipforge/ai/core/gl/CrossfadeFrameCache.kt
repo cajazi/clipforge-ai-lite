@@ -2,6 +2,7 @@ package com.clipforge.ai.core.gl
 
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.ImageFormat
 import android.media.Image
 import android.media.ImageReader
 import android.media.MediaCodec
@@ -18,14 +19,15 @@ import java.util.concurrent.atomic.AtomicInteger
  * Pre-extracts the crossfade overlap window's frames ONCE into an in-memory list,
  * then serves them by frame index during rendering (render loop does zero seeks).
  *
- * PRIMARY path: MediaCodec streaming decoder, output to an ImageReader surface.
- * Images are captured ASYNCHRONOUSLY via OnImageAvailableListener on a dedicated
- * HandlerThread (acquireNextImage) - NOT polled in the decode loop, which raced the
- * async delivery and captured 0 frames. Frames are paired with their PTS and sorted
- * by timestamp at the end for correct order.
+ * PRIMARY path: MediaCodec streaming decoder -> YUV_420_888 ImageReader. Images are
+ * captured ASYNCHRONOUSLY via OnImageAvailableListener on a dedicated HandlerThread
+ * (acquireNextImage), converted YUV->RGB, paired with PTS, and sorted at the end.
  *
- * FALLBACK path: MediaMetadataRetriever extraction (slow but reliable), used only if
- * MediaCodec truly fails / yields no frames.
+ * Why YUV_420_888 (not RGBA_8888): hardware video decoders deliver YUV from the
+ * decoder surface; an RGBA_8888 ImageReader received 0 images on the SM-A165F. YUV
+ * is the format decoders actually produce.
+ *
+ * FALLBACK: MediaMetadataRetriever (slow but reliable), only if MediaCodec fails.
  *
  * Public interface (unchanged): build(), frameForOffset(Long), isEmpty(), release().
  */
@@ -68,7 +70,7 @@ class CrossfadeFrameCache(
         built = true
     }
 
-    // ---------------- PRIMARY: MediaCodec + async ImageReader ----------------
+    // ---------------- PRIMARY: MediaCodec + YUV_420_888 ImageReader ----------------
 
     private fun buildWithMediaCodec(): Boolean {
         val extractor = MediaExtractor()
@@ -77,7 +79,6 @@ class CrossfadeFrameCache(
         val readerThread = HandlerThread("xfade-imgreader").apply { start() }
         val readerHandler = Handler(readerThread.looper)
 
-        // Collected (pts, bitmap) pairs, filled by the listener thread.
         val collected = java.util.Collections.synchronizedList(ArrayList<Pair<Long, Bitmap>>())
         val imagesReceived = AtomicInteger(0)
 
@@ -94,15 +95,15 @@ class CrossfadeFrameCache(
             val mime = format.getString(MediaFormat.KEY_MIME) ?: return false
             val (outW, outH) = scaledSize(srcW, srcH)
 
-            imageReader = ImageReader.newInstance(srcW, srcH, android.graphics.PixelFormat.RGBA_8888, 6)
+            imageReader = ImageReader.newInstance(srcW, srcH, ImageFormat.YUV_420_888, (frameCount + 8).coerceAtMost(64))
             imageReader.setOnImageAvailableListener({ reader ->
                 val image = try { reader.acquireNextImage() } catch (e: Exception) { null }
                 if (image != null) {
                     try {
                         imagesReceived.incrementAndGet()
-                        val ptsUs = image.timestamp / 1000L // Image.timestamp is ns
+                        val ptsUs = image.timestamp / 1000L // ns -> us
                         if (ptsUs in startUs..endUs) {
-                            val bmp = imageToBitmap(image, outW, outH, rotation)
+                            val bmp = yuvImageToBitmap(image, outW, outH, rotation)
                             if (bmp != null) collected.add(ptsUs to bmp)
                         }
                     } catch (e: Exception) {
@@ -150,7 +151,6 @@ class CrossfadeFrameCache(
                 val outIndex = codec.dequeueOutputBuffer(bufferInfo, 10_000)
                 if (outIndex >= 0) {
                     val ptsUs = bufferInfo.presentationTimeUs
-                    // Render to the surface only for in-window frames (a little padding).
                     val render = ptsUs in (startUs - frameDurationUs)..(endUs + frameDurationUs)
                     codec.releaseOutputBuffer(outIndex, render)
                     if (render) renderedCount++
@@ -161,15 +161,14 @@ class CrossfadeFrameCache(
                 }
             }
 
-            // Drain: wait for the listener to deliver up to renderedCount images (req 8).
-            val drainDeadline = System.currentTimeMillis() + 3_000
+            // Drain: wait for the listener to deliver up to renderedCount images.
+            val drainDeadline = System.currentTimeMillis() + 10_000
             while (imagesReceived.get() < renderedCount && System.currentTimeMillis() < drainDeadline) {
                 Thread.sleep(10)
             }
 
             Log.d(tag, "decoded outputBuffers(rendered)=$renderedCount imagesReceived=${imagesReceived.get()} (src ${srcW}x$srcH rot=$rotation -> ${outW}x$outH)")
 
-            // Order by PTS (req 6) and store.
             val ordered = synchronized(collected) { collected.sortedBy { it.first } }
             for (p in ordered) frames.add(p.second)
 
@@ -184,7 +183,6 @@ class CrossfadeFrameCache(
             try { imageReader?.close() } catch (_: Exception) {}
             try { extractor.release() } catch (_: Exception) {}
             try { readerThread.quitSafely() } catch (_: Exception) {}
-            // If we ended up failing, recycle any bitmaps the listener collected but we won't use.
             if (frames.isEmpty()) {
                 synchronized(collected) { for (p in collected) if (!p.second.isRecycled) p.second.recycle() }
             }
@@ -200,32 +198,67 @@ class CrossfadeFrameCache(
         return -1
     }
 
-    /** Copy an RGBA_8888 Image into a Bitmap (honoring rowStride), then rotate + scale. */
-    private fun imageToBitmap(image: Image, outW: Int, outH: Int, rotation: Int): Bitmap? {
+    /**
+     * Convert a YUV_420_888 Image to an ARGB Bitmap, then rotate + scale.
+     * Handles arbitrary rowStride/pixelStride per plane (works for planar I420 and
+     * semi-planar NV12/NV21, where U/V pixelStride is typically 2 and interleaved).
+     */
+    private fun yuvImageToBitmap(image: Image, outW: Int, outH: Int, rotation: Int): Bitmap? {
         return try {
-            val plane = image.planes[0]
-            val buffer: ByteBuffer = plane.buffer
-            val pixelStride = plane.pixelStride
-            val rowStride = plane.rowStride
             val w = image.width
             val h = image.height
-            val rowPadding = rowStride - pixelStride * w
+            val yPlane = image.planes[0]
+            val uPlane = image.planes[1]
+            val vPlane = image.planes[2]
 
-            val full = Bitmap.createBitmap(w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888)
-            buffer.rewind()
-            full.copyPixelsFromBuffer(buffer)
-            val cropped = if (rowPadding == 0) full else {
-                val c = Bitmap.createBitmap(full, 0, 0, w, h)
-                if (c !== full) full.recycle()
-                c
+            val yBuf: ByteBuffer = yPlane.buffer
+            val uBuf: ByteBuffer = uPlane.buffer
+            val vBuf: ByteBuffer = vPlane.buffer
+
+            val yRowStride = yPlane.rowStride
+            val yPixStride = yPlane.pixelStride
+            val uRowStride = uPlane.rowStride
+            val uPixStride = uPlane.pixelStride
+            val vRowStride = vPlane.rowStride
+            val vPixStride = vPlane.pixelStride
+
+            val argb = IntArray(w * h)
+
+            for (y in 0 until h) {
+                val uvRow = (y shr 1)
+                val yRowBase = y * yRowStride
+                val uRowBase = uvRow * uRowStride
+                val vRowBase = uvRow * vRowStride
+                for (x in 0 until w) {
+                    val uvCol = (x shr 1)
+                    val yIdx = yRowBase + x * yPixStride
+                    val uIdx = uRowBase + uvCol * uPixStride
+                    val vIdx = vRowBase + uvCol * vPixStride
+
+                    val Y = (yBuf.get(yIdx).toInt() and 0xFF)
+                    val U = (uBuf.get(uIdx).toInt() and 0xFF) - 128
+                    val V = (vBuf.get(vIdx).toInt() and 0xFF) - 128
+
+                    // BT.601 YUV -> RGB
+                    var r = (Y + 1.402f * V).toInt()
+                    var g = (Y - 0.344136f * U - 0.714136f * V).toInt()
+                    var b = (Y + 1.772f * U).toInt()
+                    r = if (r < 0) 0 else if (r > 255) 255 else r
+                    g = if (g < 0) 0 else if (g > 255) 255 else g
+                    b = if (b < 0) 0 else if (b > 255) 255 else b
+
+                    argb[y * w + x] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                }
             }
+
+            val base = Bitmap.createBitmap(argb, w, h, Bitmap.Config.ARGB_8888)
 
             val rotated = if (rotation != 0) {
                 val m = Matrix().apply { postRotate(rotation.toFloat()) }
-                val r = Bitmap.createBitmap(cropped, 0, 0, cropped.width, cropped.height, m, true)
-                if (r !== cropped) cropped.recycle()
+                val r = Bitmap.createBitmap(base, 0, 0, base.width, base.height, m, true)
+                if (r !== base) base.recycle()
                 r
-            } else cropped
+            } else base
 
             val scaled = if (rotated.width == outW && rotated.height == outH) rotated
             else {
@@ -235,7 +268,7 @@ class CrossfadeFrameCache(
             }
             scaled
         } catch (e: Exception) {
-            Log.e(tag, "imageToBitmap failed: ${e.message}")
+            Log.e(tag, "yuvImageToBitmap failed: ${e.message}")
             null
         }
     }
