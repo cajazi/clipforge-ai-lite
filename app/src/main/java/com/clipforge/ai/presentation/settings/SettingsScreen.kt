@@ -87,7 +87,7 @@ fun SettingsScreen(
                             android.widget.Toast.makeText(ctx, "Could not read clip A duration", android.widget.Toast.LENGTH_LONG).show()
                             return@launch
                         }
-                        com.clipforge.ai.core.gl.CrossfadeExecutor.renderProjectDissolvePair(
+                        com.clipforge.ai.core.gl.CrossfadeExecutor.renderProjectTimeline(
                             context = ctx,
                             projectId = projectId,
                             onProgress = { pct -> android.util.Log.d("CROSSFADE_TEST", "progress=$pct") },
