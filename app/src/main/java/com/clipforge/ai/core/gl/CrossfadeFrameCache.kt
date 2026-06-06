@@ -1,31 +1,33 @@
 package com.clipforge.ai.core.gl
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.media.Image
+import android.media.ImageReader
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
+import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Pre-extracts the crossfade overlap window's frames ONCE, sequentially, into an
- * in-memory list, then serves them by frame index during rendering.
+ * Pre-extracts the crossfade overlap window's frames ONCE into an in-memory list,
+ * then serves them by frame index during rendering (render loop does zero seeks).
  *
- * Why: MediaMetadataRetriever.getFrameAtTime per rendered frame seek-thrashes (a
- * full seek+decode each call), which made a ~2.8s crossfade take ~2.5 min. By
- * extracting the ~ (durationSec * fps) frames up front and serving cached Bitmaps
- * by index, the render loop does zero seeks.
+ * PRIMARY path: MediaCodec streaming decoder, output to an ImageReader surface.
+ * Images are captured ASYNCHRONOUSLY via OnImageAvailableListener on a dedicated
+ * HandlerThread (acquireNextImage) - NOT polled in the decode loop, which raced the
+ * async delivery and captured 0 frames. Frames are paired with their PTS and sorted
+ * by timestamp at the end for correct order.
  *
- * Accuracy: keeps OPTION_CLOSEST during pre-extraction (NOT OPTION_CLOSEST_SYNC,
- * which snaps to keyframes and would blur transition timing).
+ * FALLBACK path: MediaMetadataRetriever extraction (slow but reliable), used only if
+ * MediaCodec truly fails / yields no frames.
  *
- * This is the interim fast path. Later this extractor is replaced by a proper
- * MediaCodec streaming decoder for CapCut-level performance.
- *
- * Call release() after export to free the bitmaps.
- *
- * @param clipPath      source clip (clip B) to extract frames from.
- * @param startUs       where in the clip the window begins (clip B's head start).
- * @param windowUs      length of the crossfade window in microseconds.
- * @param fps           sampling rate; render is ~30fps so 30 aligns the cache.
- * @param maxDimension  longest-edge cap for stored bitmaps to bound memory.
+ * Public interface (unchanged): build(), frameForOffset(Long), isEmpty(), release().
  */
 class CrossfadeFrameCache(
     private val clipPath: String,
@@ -39,41 +41,244 @@ class CrossfadeFrameCache(
     private val frameDurationUs: Long = (1_000_000L / fps)
     @Volatile private var built = false
 
-    /** Number of frames to extract to cover the window (with one frame of padding). */
     private val frameCount: Int =
         ((windowUs + frameDurationUs - 1) / frameDurationUs).toInt() + 1
+    private val endUs: Long = startUs + windowUs
 
-    /** Extract all window frames sequentially. Call once, off the main thread. */
     fun build() {
         if (built) return
+        val t0 = System.currentTimeMillis()
+        Log.d(tag, "decoder start clip=${clipPath.substringAfterLast('/')} startUs=$startUs windowUs=$windowUs")
+
+        val ok = try {
+            buildWithMediaCodec()
+        } catch (e: Throwable) {
+            Log.e(tag, "MediaCodec path threw: ${e.message}", e)
+            false
+        }
+
+        if (!ok || frames.isEmpty()) {
+            releaseFramesOnly()
+            Log.d(tag, "FALLBACK -> MediaMetadataRetriever")
+            buildWithRetriever()
+            Log.d(tag, "built ${frames.size} frames (fallback=YES) transitionUs=$windowUs extractionMs=${System.currentTimeMillis() - t0}")
+        } else {
+            Log.d(tag, "built ${frames.size} frames (fallback=NO) transitionUs=$windowUs extractionMs=${System.currentTimeMillis() - t0}")
+        }
+        built = true
+    }
+
+    // ---------------- PRIMARY: MediaCodec + async ImageReader ----------------
+
+    private fun buildWithMediaCodec(): Boolean {
+        val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
+        var imageReader: ImageReader? = null
+        val readerThread = HandlerThread("xfade-imgreader").apply { start() }
+        val readerHandler = Handler(readerThread.looper)
+
+        // Collected (pts, bitmap) pairs, filled by the listener thread.
+        val collected = java.util.Collections.synchronizedList(ArrayList<Pair<Long, Bitmap>>())
+        val imagesReceived = AtomicInteger(0)
+
+        try {
+            extractor.setDataSource(clipPath)
+            val trackIndex = selectVideoTrack(extractor)
+            if (trackIndex < 0) { Log.e(tag, "no video track"); return false }
+            extractor.selectTrack(trackIndex)
+            val format = extractor.getTrackFormat(trackIndex)
+
+            val srcW = format.getInteger(MediaFormat.KEY_WIDTH)
+            val srcH = format.getInteger(MediaFormat.KEY_HEIGHT)
+            val rotation = if (format.containsKey(MediaFormat.KEY_ROTATION)) format.getInteger(MediaFormat.KEY_ROTATION) else 0
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return false
+            val (outW, outH) = scaledSize(srcW, srcH)
+
+            imageReader = ImageReader.newInstance(srcW, srcH, android.graphics.PixelFormat.RGBA_8888, 6)
+            imageReader.setOnImageAvailableListener({ reader ->
+                val image = try { reader.acquireNextImage() } catch (e: Exception) { null }
+                if (image != null) {
+                    try {
+                        imagesReceived.incrementAndGet()
+                        val ptsUs = image.timestamp / 1000L // Image.timestamp is ns
+                        if (ptsUs in startUs..endUs) {
+                            val bmp = imageToBitmap(image, outW, outH, rotation)
+                            if (bmp != null) collected.add(ptsUs to bmp)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(tag, "listener convert failed: ${e.message}")
+                    } finally {
+                        image.close()
+                    }
+                }
+            }, readerHandler)
+
+            codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(format, imageReader.surface, null, 0)
+            codec.start()
+
+            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+            val bufferInfo = MediaCodec.BufferInfo()
+            var sawInputEOS = false
+            var sawOutputEOS = false
+            var renderedCount = 0
+            val deadlineMs = System.currentTimeMillis() + 15_000
+
+            while (!sawOutputEOS) {
+                if (System.currentTimeMillis() > deadlineMs) {
+                    Log.e(tag, "MediaCodec deadline exceeded -> abort to fallback")
+                    return false
+                }
+
+                if (!sawInputEOS) {
+                    val inIndex = codec.dequeueInputBuffer(10_000)
+                    if (inIndex >= 0) {
+                        val inBuf = codec.getInputBuffer(inIndex)!!
+                        val sampleSize = extractor.readSampleData(inBuf, 0)
+                        if (sampleSize < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            sawInputEOS = true
+                        } else {
+                            val pts = extractor.sampleTime
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, pts, 0)
+                            extractor.advance()
+                        }
+                    }
+                }
+
+                val outIndex = codec.dequeueOutputBuffer(bufferInfo, 10_000)
+                if (outIndex >= 0) {
+                    val ptsUs = bufferInfo.presentationTimeUs
+                    // Render to the surface only for in-window frames (a little padding).
+                    val render = ptsUs in (startUs - frameDurationUs)..(endUs + frameDurationUs)
+                    codec.releaseOutputBuffer(outIndex, render)
+                    if (render) renderedCount++
+                    if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) sawOutputEOS = true
+                    if (ptsUs > endUs + frameDurationUs) sawOutputEOS = true
+                } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    Log.d(tag, "output format: ${codec.outputFormat}")
+                }
+            }
+
+            // Drain: wait for the listener to deliver up to renderedCount images (req 8).
+            val drainDeadline = System.currentTimeMillis() + 3_000
+            while (imagesReceived.get() < renderedCount && System.currentTimeMillis() < drainDeadline) {
+                Thread.sleep(10)
+            }
+
+            Log.d(tag, "decoded outputBuffers(rendered)=$renderedCount imagesReceived=${imagesReceived.get()} (src ${srcW}x$srcH rot=$rotation -> ${outW}x$outH)")
+
+            // Order by PTS (req 6) and store.
+            val ordered = synchronized(collected) { collected.sortedBy { it.first } }
+            for (p in ordered) frames.add(p.second)
+
+            Log.d(tag, "frames kept=${frames.size}")
+            return frames.isNotEmpty()
+        } catch (e: Exception) {
+            Log.e(tag, "MediaCodec decode failed: ${e.message}", e)
+            return false
+        } finally {
+            try { codec?.stop() } catch (_: Exception) {}
+            try { codec?.release() } catch (_: Exception) {}
+            try { imageReader?.close() } catch (_: Exception) {}
+            try { extractor.release() } catch (_: Exception) {}
+            try { readerThread.quitSafely() } catch (_: Exception) {}
+            // If we ended up failing, recycle any bitmaps the listener collected but we won't use.
+            if (frames.isEmpty()) {
+                synchronized(collected) { for (p in collected) if (!p.second.isRecycled) p.second.recycle() }
+            }
+        }
+    }
+
+    private fun selectVideoTrack(extractor: MediaExtractor): Int {
+        for (i in 0 until extractor.trackCount) {
+            val f = extractor.getTrackFormat(i)
+            val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+            if (mime.startsWith("video/")) return i
+        }
+        return -1
+    }
+
+    /** Copy an RGBA_8888 Image into a Bitmap (honoring rowStride), then rotate + scale. */
+    private fun imageToBitmap(image: Image, outW: Int, outH: Int, rotation: Int): Bitmap? {
+        return try {
+            val plane = image.planes[0]
+            val buffer: ByteBuffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val w = image.width
+            val h = image.height
+            val rowPadding = rowStride - pixelStride * w
+
+            val full = Bitmap.createBitmap(w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888)
+            buffer.rewind()
+            full.copyPixelsFromBuffer(buffer)
+            val cropped = if (rowPadding == 0) full else {
+                val c = Bitmap.createBitmap(full, 0, 0, w, h)
+                if (c !== full) full.recycle()
+                c
+            }
+
+            val rotated = if (rotation != 0) {
+                val m = Matrix().apply { postRotate(rotation.toFloat()) }
+                val r = Bitmap.createBitmap(cropped, 0, 0, cropped.width, cropped.height, m, true)
+                if (r !== cropped) cropped.recycle()
+                r
+            } else cropped
+
+            val scaled = if (rotated.width == outW && rotated.height == outH) rotated
+            else {
+                val s = Bitmap.createScaledBitmap(rotated, outW, outH, true)
+                if (s !== rotated) rotated.recycle()
+                s
+            }
+            scaled
+        } catch (e: Exception) {
+            Log.e(tag, "imageToBitmap failed: ${e.message}")
+            null
+        }
+    }
+
+    private fun scaledSize(w: Int, h: Int): Pair<Int, Int> {
+        val longEdge = maxOf(w, h)
+        if (longEdge <= maxDimension) return w to h
+        val ratio = maxDimension.toFloat() / longEdge
+        return (w * ratio).toInt().coerceAtLeast(1) to (h * ratio).toInt().coerceAtLeast(1)
+    }
+
+    // ---------------- FALLBACK: MediaMetadataRetriever ----------------
+
+    private fun buildWithRetriever() {
         val mmr = MediaMetadataRetriever()
         try {
             mmr.setDataSource(clipPath)
-            var extracted = 0
             for (i in 0 until frameCount) {
                 val srcUs = startUs + i * frameDurationUs
                 val raw = mmr.getFrameAtTime(srcUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                if (raw != null) {
-                    frames.add(scaleIfNeeded(raw))
-                    extracted++
-                } else if (frames.isNotEmpty()) {
-                    // Past end of clip / decode miss: repeat last good frame.
-                    frames.add(frames.last())
-                }
+                if (raw != null) frames.add(scaleIfNeeded(raw))
+                else if (frames.isNotEmpty()) frames.add(frames.last())
             }
-            built = true
-            Log.d(tag, "built $extracted/$frameCount frames from ${clipPath.substringAfterLast('/')} window=${windowUs}us fps=$fps")
         } catch (e: Exception) {
-            Log.e(tag, "build failed: ${e.message}", e)
+            Log.e(tag, "retriever fallback failed: ${e.message}", e)
         } finally {
             try { mmr.release() } catch (_: Exception) {}
         }
     }
 
-    /**
-     * Return the frame for a given offset into the window (0 .. windowUs).
-     * Index = intoWindowUs / frameDurationUs, clamped to the cached range.
-     */
+    private fun scaleIfNeeded(bmp: Bitmap): Bitmap {
+        val longEdge = maxOf(bmp.width, bmp.height)
+        if (longEdge <= maxDimension) return bmp
+        val ratio = maxDimension.toFloat() / longEdge
+        val nw = (bmp.width * ratio).toInt().coerceAtLeast(1)
+        val nh = (bmp.height * ratio).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bmp, nw, nh, true)
+        if (scaled !== bmp) bmp.recycle()
+        return scaled
+    }
+
+    // ---------------- serving / lifecycle (unchanged interface) ----------------
+
     fun frameForOffset(intoWindowUs: Long): Bitmap? {
         if (frames.isEmpty()) return null
         val idx = (intoWindowUs / frameDurationUs).toInt().coerceIn(0, frames.size - 1)
@@ -82,24 +287,13 @@ class CrossfadeFrameCache(
 
     fun isEmpty(): Boolean = frames.isEmpty()
 
-    private fun scaleIfNeeded(bmp: Bitmap): Bitmap {
-        val w = bmp.width
-        val h = bmp.height
-        val longEdge = maxOf(w, h)
-        if (longEdge <= maxDimension) return bmp
-        val ratio = maxDimension.toFloat() / longEdge
-        val nw = (w * ratio).toInt().coerceAtLeast(1)
-        val nh = (h * ratio).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(bmp, nw, nh, true)
-        if (scaled !== bmp) bmp.recycle()
-        return scaled
+    private fun releaseFramesOnly() {
+        for (b in frames) if (!b.isRecycled) b.recycle()
+        frames.clear()
     }
 
     fun release() {
-        for (b in frames) {
-            if (!b.isRecycled) b.recycle()
-        }
-        frames.clear()
+        releaseFramesOnly()
         built = false
     }
 }
