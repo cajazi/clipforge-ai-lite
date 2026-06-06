@@ -59,6 +59,7 @@ class CrossfadeBitmapOverlay(
                 ((presentationTimeUs - fadeStartUs).toFloat() / span).coerceIn(0f, 1f)
             }
         }
+        android.util.Log.d("CROSSFADE_OV", "ptUs=" + presentationTimeUs + " fade=[" + fadeStartUs + ".." + fadeEndUs + "] alpha=" + alpha)
         // Full-frame: scale 1x1, anchor centered. Explicitly set to avoid any
         // default that would shrink/offset the overlay (the mis-positioning risk).
         return StaticOverlaySettings.Builder()

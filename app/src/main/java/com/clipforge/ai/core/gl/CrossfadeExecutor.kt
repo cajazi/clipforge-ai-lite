@@ -155,8 +155,8 @@ object CrossfadeExecutor {
         val overlay = CrossfadeBitmapOverlay(
             clipBPath = clip2Path,
             clipBStartUs = 0L,
-            fadeStartUs = 0L,
-            fadeEndUs = crossfadeUs
+            fadeStartUs = clip1BodyEndMs * 1000L,
+            fadeEndUs = (clip1BodyEndMs + crossfadeMs) * 1000L
         )
         val item1 = EditedMediaItem.Builder(clip(clip1Path, clip1TailStartMs, dur1Ms))
             .setEffects(Effects(emptyList(), listOf(OverlayEffect(listOf(overlay)))))
