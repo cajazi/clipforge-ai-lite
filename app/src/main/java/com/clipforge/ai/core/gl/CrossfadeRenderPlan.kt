@@ -24,6 +24,9 @@ object CrossfadeRenderPlan {
 
     // transitionType strings that we can actually render today.
     private val REAL_CROSSFADE_TYPES = setOf("DISSOLVE", "CROSS_DISSOLVE")
+    // Fade-through-a-color transitions (FADE + FADE_BLACK -> black, FADE_WHITE -> white).
+    private val FADE_BLACK_TYPES = setOf("FADE", "FADE_BLACK")
+    private val FADE_WHITE_TYPES = setOf("FADE_WHITE")
 
     data class ClipInfo(
         val path: String,
@@ -40,6 +43,12 @@ object CrossfadeRenderPlan {
         data class Crossfade(
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val crossfadeMs: Long
+        ) : Op()
+        /** Dip through a solid color: A-tail fades to color (durMs/2), then B-head fades from color (durMs/2). */
+        data class DipToColor(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val bHeadEndMs: Long,
+            val halfDurationMs: Long, val colorInt: Int
         ) : Op()
     }
 
@@ -91,6 +100,9 @@ object CrossfadeRenderPlan {
             // Decide crossfades on each boundary i -> i+1.
             val isCrossfade = BooleanArray(entries.size) // crossfade from i into i+1
             val crossfadeMsArr = LongArray(entries.size)
+            val isDip = BooleanArray(entries.size)
+            val dipColorArr = IntArray(entries.size)
+            val dipDurMsArr = LongArray(entries.size)
             for (i in 0 until entries.size - 1) {
                 val t = entries[i].transitionType?.uppercase()
                 val durMs = entries[i].transitionDurationMs ?: 0L
@@ -99,6 +111,13 @@ object CrossfadeRenderPlan {
                     crossfadeMsArr[i] = durMs
                     tailConsumed[i] += durMs
                     headConsumed[i + 1] += durMs
+                } else if ((t in FADE_BLACK_TYPES || t in FADE_WHITE_TYPES) && durMs > 0L) {
+                    isDip[i] = true
+                    dipColorArr[i] = if (t in FADE_WHITE_TYPES) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+                    dipDurMsArr[i] = durMs
+                    val half = durMs / 2
+                    tailConsumed[i] += half
+                    headConsumed[i + 1] += half
                 } else if (t != null && t != "NONE" && durMs > 0L) {
                     Log.d(TAG, "boundary $i->${i + 1} type=$t NOT implemented -> plain cut")
                 }
@@ -134,6 +153,23 @@ object CrossfadeRenderPlan {
                         )
                     )
                 }
+                // Dip-through-color: emit A-tail (fade to color) + B-head (fade from color), each half.
+                if (i < entries.size - 1 && isDip[i]) {
+                    val half = dipDurMsArr[i] / 2
+                    val next = entries[i + 1]
+                    ops.add(
+                        Op.DipToColor(
+                            pathA = e.path,
+                            aTailStartMs = clipEnd - half,
+                            aEndMs = clipEnd,
+                            pathB = next.path,
+                            bHeadStartMs = next.trimStartMs,
+                            bHeadEndMs = next.trimStartMs + half,
+                            halfDurationMs = half,
+                            colorInt = dipColorArr[i]
+                        )
+                    )
+                }
             }
 
             Log.d(TAG, "=== RENDER PLAN (${ops.size} ops) ===")
@@ -141,6 +177,7 @@ object CrossfadeRenderPlan {
                 when (op) {
                     is Op.PlainClip -> Log.d(TAG, "[$idx] PLAIN ${op.path.substringAfterLast('/')} [${op.startMs}..${op.endMs}]")
                     is Op.Crossfade -> Log.d(TAG, "[$idx] XFADE ${op.crossfadeMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.DipToColor -> Log.d(TAG, "[$idx] DIP color=${op.colorInt} half=${op.halfDurationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[${op.bHeadStartMs}..${op.bHeadEndMs}]")
                 }
             }
             ops

@@ -166,6 +166,30 @@ object CrossfadeExecutor {
                         Log.d(TAG, "XFADE ${op.crossfadeMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs fade=[$fadeStartUs..$fadeEndUs] cacheFrames=${if (cache.isEmpty()) 0 else 1}")
                         runningTimeMs += op.crossfadeMs
                     }
+                    is CrossfadeRenderPlan.Op.DipToColor -> {
+                        val half = op.halfDurationMs
+                        // A-tail fades down to the color.
+                        val fadeOutStartUs = runningTimeMs * 1000L
+                        val fadeOutEndUs = (runningTimeMs + half) * 1000L
+                        val overlayA = DipToColorOverlay(op.colorInt, fadeOutStartUs, fadeOutEndUs, fadeOut = true)
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(OverlayEffect(listOf(overlayA)))))
+                                .build()
+                        )
+                        runningTimeMs += half
+                        // B-head fades up from the color.
+                        val fadeInStartUs = runningTimeMs * 1000L
+                        val fadeInEndUs = (runningTimeMs + half) * 1000L
+                        val overlayB = DipToColorOverlay(op.colorInt, fadeInStartUs, fadeInEndUs, fadeOut = false)
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathB, op.bHeadStartMs, op.bHeadEndMs))
+                                .setEffects(Effects(emptyList(), listOf(OverlayEffect(listOf(overlayB)))))
+                                .build()
+                        )
+                        Log.d(TAG, "DIP color=${op.colorInt} half=${half}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]@$fadeOutStartUs B=${op.pathB.substringAfterLast('/')}[${op.bHeadStartMs}..${op.bHeadEndMs}]@$fadeInStartUs fallback=NO")
+                        runningTimeMs += half
+                    }
                 }
             }
         }
