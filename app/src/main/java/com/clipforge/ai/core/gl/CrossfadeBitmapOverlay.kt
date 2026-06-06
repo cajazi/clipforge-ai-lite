@@ -47,7 +47,9 @@ class CrossfadeBitmapOverlay(
             presentationTimeUs >= fadeEndUs -> 1f
             else -> {
                 val span = (fadeEndUs - fadeStartUs).toFloat()
-                ((presentationTimeUs - fadeStartUs).toFloat() / span).coerceIn(0f, 1f)
+                val t = ((presentationTimeUs - fadeStartUs).toFloat() / span).coerceIn(0f, 1f)
+                // smoothstep easing for a softer, CapCut-like dissolve
+                t * t * (3f - 2f * t)
             }
         }
         return StaticOverlaySettings.Builder()
