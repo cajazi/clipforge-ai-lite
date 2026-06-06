@@ -23,17 +23,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Executor step 1 - prove single-sequence assembly of [plain][crossfade-overlay][plain].
+ * Executor: assembles [plain][crossfade-overlay][plain] in one sequence.
  *
- * Tests whether a plain EditedMediaItem and an OverlayEffect-carrying EditedMediaItem
- * coexist in ONE concatenated sequence with the overlay isolated to its own item.
- * If output plays clip1 -> dissolve -> clip2, the architecture is proven.
+ * CRITICAL: the crossfade frame cache is built BEFORE transformer.start(), off the
+ * render thread. Building it lazily during the first getBitmap() blocks the
+ * video-processing thread for the whole extraction (~30s), producing no output
+ * samples, which trips Media3's 10s muxer watchdog ("no output sample written").
+ * So we pre-extract on IO, then start the transformer with a ready cache.
  *
- *   item 0: clip1 body          [0 .. dur1 - crossfade]            plain
- *   item 1: crossfade segment   clip1 tail + clip2 head overlay    OverlayEffect
- *   item 2: clip2 body          [crossfade .. dur2]                plain
- *
- * Overlay uses the proven (slow) CrossfadeBitmapOverlay - speed comes later.
+ * Overlay uses CrossfadeFrameCache (interim fast path) - later replaced by a proper
+ * MediaCodec streaming decoder.
  */
 @UnstableApi
 object CrossfadeExecutor {
@@ -72,12 +71,7 @@ object CrossfadeExecutor {
         }
     }
 
-    /**
-     * Self-contained test entry: finds the first real dissolve boundary in the project,
-     * reads both clips' durations, and renders the [plain][xfade][plain] assembly for
-     * that pair. Must be called from a coroutine on Main (it hops to IO internally for
-     * the DB + duration reads, then back to Main for Transformer).
-     */
+    /** Self-contained test entry: first real dissolve boundary -> render the pair. */
     suspend fun renderProjectDissolvePair(
         context: Context,
         projectId: String,
@@ -98,7 +92,6 @@ object CrossfadeExecutor {
             out
         }
 
-        // Find first clip whose transition into the next is a real dissolve.
         var pairIndex = -1
         for (i in 0 until clips.size - 1) {
             val t = clips[i].transitionType?.uppercase()
@@ -112,7 +105,6 @@ object CrossfadeExecutor {
 
         val c1 = clips[pairIndex]
         val c2 = clips[pairIndex + 1]
-        // Find the duration the picker stored for this transition.
         val db = ClipForgeDatabase.getInstance(context)
         val crossfadeMs = withContext(Dispatchers.IO) {
             db.timelineDao().getTimelineForProjectOnce(projectId)
@@ -131,8 +123,9 @@ object CrossfadeExecutor {
 
     /**
      * Renders [clip1 body][crossfade][clip2 body] as one sequence.
+     * suspend: builds the frame cache on IO BEFORE starting the transformer on Main.
      */
-    fun renderTwoClipCrossfade(
+    suspend fun renderTwoClipCrossfade(
         context: Context,
         clip1Path: String,
         dur1Ms: Long,
@@ -148,15 +141,32 @@ object CrossfadeExecutor {
         val crossfadeUs = crossfadeMs * 1000L
         val clip1BodyEndMs = (dur1Ms - crossfadeMs).coerceAtLeast(0L)
         val clip1TailStartMs = clip1BodyEndMs
+        val fadeStartUs = clip1BodyEndMs * 1000L
+        val fadeEndUs = (clip1BodyEndMs + crossfadeMs) * 1000L
         Log.d(TAG, "ASSEMBLY clip1Body=[0..$clip1BodyEndMs] xfade(${crossfadeMs}ms) clip1Tail=[$clip1TailStartMs..$dur1Ms]+clip2Head clip2Body=[$crossfadeMs..$dur2Ms]")
+
+        // Pre-build the frame cache OFF the render thread (avoids the muxer watchdog).
+        val cache = CrossfadeFrameCache(
+            clipPath = clip2Path,
+            startUs = 0L,
+            windowUs = crossfadeUs
+        )
+        withContext(Dispatchers.IO) {
+            Log.d(TAG, "pre-building frame cache...")
+            cache.build()
+        }
+        if (cache.isEmpty()) {
+            onResult(Result.Error("frame cache empty - extraction failed"))
+            return
+        }
+        Log.d(TAG, "cache ready, starting transformer")
 
         val item0 = EditedMediaItem.Builder(clip(clip1Path, 0L, clip1BodyEndMs)).build()
 
         val overlay = CrossfadeBitmapOverlay(
-            clipBPath = clip2Path,
-            clipBStartUs = 0L,
-            fadeStartUs = clip1BodyEndMs * 1000L,
-            fadeEndUs = (clip1BodyEndMs + crossfadeMs) * 1000L
+            cache = cache,
+            fadeStartUs = fadeStartUs,
+            fadeEndUs = fadeEndUs
         )
         val item1 = EditedMediaItem.Builder(clip(clip1Path, clip1TailStartMs, dur1Ms))
             .setEffects(Effects(emptyList(), listOf(OverlayEffect(listOf(overlay)))))
