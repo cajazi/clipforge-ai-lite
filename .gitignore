@@ -49,3 +49,6 @@ multiclip_test.mp4
 cf_db.sqlite
 *.sqlite-wal
 *.sqlite-shm
+# DB-peek tools and copies
+read_*.py
+clipforge_copy.db*

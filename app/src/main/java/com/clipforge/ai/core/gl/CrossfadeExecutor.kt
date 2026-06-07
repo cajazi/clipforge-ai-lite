@@ -76,21 +76,6 @@ object CrossfadeExecutor {
         }
     }
 
-    private fun logVideoInfo(tag2: String, path: String) {
-        val mmr = MediaMetadataRetriever()
-        try {
-            mmr.setDataSource(path)
-            val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-            val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-            val rot = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-            Log.d(TAG, "VINFO " + tag2 + " " + path.substringAfterLast('/') + " w=" + w + " h=" + h + " rotation=" + rot)
-        } catch (e: Exception) {
-            Log.d(TAG, "VINFO " + tag2 + " failed: " + e.message)
-        } finally {
-            try { mmr.release() } catch (_: Exception) {}
-        }
-    }
-
     /**
      * GENERALIZED entry: walk the whole render plan, build all crossfade segments with
      * correct cumulative composition offsets, concatenate, render. Handles any number of
@@ -142,7 +127,6 @@ object CrossfadeExecutor {
                 when (op) {
                     is CrossfadeRenderPlan.Op.PlainClip -> {
                         val durMs = (op.endMs - op.startMs).coerceAtLeast(0L)
-                        logVideoInfo("plain", op.path)
                         items.add(EditedMediaItem.Builder(clip(op.path, op.startMs, op.endMs)).build())
                         Log.d(TAG, "PLAIN ${op.path.substringAfterLast('/')} [${op.startMs}..${op.endMs}] @t=$runningTimeMs dur=$durMs")
                         runningTimeMs += durMs

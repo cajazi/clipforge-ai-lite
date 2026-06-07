@@ -55,16 +55,6 @@ fun SettingsScreen(
             val glTestCtx = LocalContext.current
             Button(
                 onClick = {
-                    com.clipforge.ai.core.gl.GlExportTest.runTransformerTest(
-                        glTestCtx,
-                        android.net.Uri.fromFile(java.io.File(glTestCtx.getExternalFilesDir(null), "input_test.mp4"))
-                    ) { ok, msg -> android.util.Log.d("GL_EXPORT_TEST", "result ok=$ok $msg") }
-                },
-                modifier = Modifier.padding(16.dp)
-            ) { Text("GL export test") }
-
-            Button(
-                onClick = {
                     val ctx = glTestCtx
                     kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                         val projectId = "6bda9039-9806-4e7c-bf64-af949540a4f1"
