@@ -138,17 +138,34 @@ fun ExportProgressScreen(
                     )
                     Spacer(modifier = Modifier.height(AppSpacing.xl))
                     OutlinedButton(
-                        onClick = viewModel::cancelExport,
+                        onClick = { viewModel.cancelExport(projectId) },
+                        enabled = uiState.canCancel,
                         shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Error)
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (uiState.canCancel) AppColors.Error else AppColors.TextSecondary
+                        )
                     ) {
-                        Text("Cancel Export", color = AppColors.Error)
+                        Text(
+                            if (uiState.isPreparingTransition) "Preparing..." else "Cancel Export",
+                            color = if (uiState.canCancel) AppColors.Error else AppColors.TextSecondary
+                        )
                     }
                 }
             }
 
             // Export info card
             if (isDone) {
+                val videoUri = remember(uiState.publicUri, uiState.outputUrl) {
+                    uiState.publicUri?.let(android.net.Uri::parse)
+                        ?: uiState.outputUrl?.let { path ->
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                java.io.File(path)
+                            )
+                        }
+                }
                 Spacer(modifier = Modifier.height(AppSpacing.sm))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -166,7 +183,12 @@ fun ExportProgressScreen(
                         }
                         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                             Text("Status", color = AppColors.TextSecondary, fontSize = 13.sp)
-                            Text("Ready to download", color = AppColors.Success, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                            Text(
+                                if (uiState.publicUri != null) "Saved to Gallery" else "Saved in app",
+                                color = AppColors.Success,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
                         }
                     }
                 }
@@ -174,7 +196,16 @@ fun ExportProgressScreen(
                 Spacer(modifier = Modifier.height(AppSpacing.lg))
 
                 Button(
-                    onClick = onDone,
+                    onClick = {
+                        videoUri?.let { uri ->
+                            val view = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "video/mp4")
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(view)
+                        }
+                    },
+                    enabled = videoUri != null,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -184,18 +215,14 @@ fun ExportProgressScreen(
                         modifier = Modifier.fillMaxSize()
                             .background(Brush.linearGradient(listOf(AppColors.Primary, AppColors.PrimaryVariant)), shape = RoundedCornerShape(16.dp)),
                         contentAlignment = Alignment.Center
-                    ) { Text("Back to Home", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) }
+                    ) { Text("View video", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) }
                 }
 
                 Spacer(modifier = Modifier.height(AppSpacing.sm))
 
                 OutlinedButton(
                     onClick = {
-                        uiState.outputUrl?.let { path ->
-                            val file = java.io.File(path)
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                context, "${context.packageName}.fileprovider", file
-                            )
+                        videoUri?.let { uri ->
                             val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                 type = "video/mp4"
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
@@ -204,15 +231,29 @@ fun ExportProgressScreen(
                             context.startActivity(android.content.Intent.createChooser(share, "Share video"))
                         }
                     },
+                    enabled = videoUri != null,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Primary)
-                ) { Text("Share Video", color = AppColors.Primary, fontWeight = FontWeight.SemiBold) }
+                ) { Text("Share", color = AppColors.Primary, fontWeight = FontWeight.SemiBold) }
+
+                Spacer(modifier = Modifier.height(AppSpacing.sm))
+
+                TextButton(
+                    onClick = onDone,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text("Done", color = AppColors.TextSecondary, fontWeight = FontWeight.SemiBold)
+                }
             }
 
             if (isFailed) {
                 Spacer(modifier = Modifier.height(AppSpacing.lg))
-                Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp)) {
+                uiState.errorMessage?.let {
+                    Text(it, fontSize = 13.sp, color = AppColors.TextSecondary, textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.height(AppSpacing.sm))
+                }
+                Button(onClick = { viewModel.startExport(projectId) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp)) {
                     Text("Try Again", fontWeight = FontWeight.SemiBold)
                 }
             }

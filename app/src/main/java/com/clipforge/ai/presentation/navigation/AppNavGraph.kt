@@ -7,7 +7,6 @@ import androidx.navigation.compose.*
 import com.clipforge.ai.presentation.auth.ForgotPasswordScreen
 import com.clipforge.ai.presentation.auth.LoginScreen
 import com.clipforge.ai.presentation.auth.RegisterScreen
-import com.clipforge.ai.presentation.editor.EditorScreen
 import com.clipforge.ai.presentation.export.ExportProgressScreen
 import com.clipforge.ai.presentation.history.ProjectHistoryScreen
 import com.clipforge.ai.presentation.home.HomeScreen
@@ -55,7 +54,7 @@ fun AppNavGraph(navController: NavHostController) {
         composable(Routes.HOME) {
             HomeScreen(
                 onCreateProject  = { navController.navigate(Routes.CREATE_PROJECT) },
-                onOpenProject    = { navController.navigate(Routes.editor(it)) },
+                onOpenProject    = { navController.navigate(Routes.timeline(it)) },
                 onSubscription   = { navController.navigate(Routes.SUBSCRIPTION) },
                 onSettings       = { navController.navigate(Routes.SETTINGS) },
                 onProjectHistory = { navController.navigate(Routes.PROJECT_HISTORY) }
@@ -99,19 +98,20 @@ fun AppNavGraph(navController: NavHostController) {
         }
         composable(Routes.UPLOAD_MEDIA, arguments = listOf(navArgument("projectId") { type = NavType.StringType })) { bs ->
             val id = bs.arguments?.getString("projectId") ?: return@composable
-            UploadMediaScreen(projectId = id, onNext = { navController.navigate(Routes.editor(id)) }, onBack = { navController.popBackStack() })
+            UploadMediaScreen(projectId = id, onNext = { navController.navigate(Routes.timeline(id)) }, onBack = { navController.popBackStack() })
         }
         composable(Routes.EDITOR, arguments = listOf(navArgument("projectId") { type = NavType.StringType })) { bs ->
             val id = bs.arguments?.getString("projectId") ?: return@composable
-            EditorScreen(projectId = id,
-                onTimeline    = { navController.navigate(Routes.timeline(id)) },
-                onTransitions = { navController.navigate(Routes.timeline(id)) },
-                onOverlays    = { navController.navigate(Routes.overlays(id)) },
-                onTextOverlay = { navController.navigate(Routes.textOverlay(id)) },
-                onMusic       = { navController.navigate(Routes.music(id)) },
-                onPreview     = { navController.navigate(Routes.preview(id)) },
-                onExport      = { navController.navigate(Routes.exportProgress(id)) { launchSingleTop = true } },
-                onBack        = { navController.popBackStack() })
+            TimelineScreen(
+                projectId      = id,
+                onBack         = { navController.popBackStack() },
+                onAddText      = { navController.navigate(Routes.textOverlay(id)) },
+                onExport       = { navController.navigate(Routes.exportProgress(id)) { launchSingleTop = true } },
+                onAddMusic     = { navController.navigate(Routes.music(id)) },
+                onAddOverlay   = { navController.navigate(Routes.overlays(id)) },
+                onAddTransition = { navController.navigate(Routes.transitionPicker(id)) },
+                onEditTransition = { clipId -> navController.navigate(Routes.transitionPicker(id, clipId)) }
+            )
         }
         composable(
             Routes.TRANSITION_PICKER,
@@ -156,7 +156,7 @@ fun AppNavGraph(navController: NavHostController) {
                 onDone = { navController.navigate(Routes.HOME) { popUpTo(Routes.HOME) { inclusive = true } } },
                 onBack = { navController.popBackStack() }) }
         composable(Routes.PROJECT_HISTORY) {
-            ProjectHistoryScreen(onOpenProject = { navController.navigate(Routes.editor(it)) }, onBack = { navController.popBackStack() }) }
+            ProjectHistoryScreen(onOpenProject = { navController.navigate(Routes.timeline(it)) }, onBack = { navController.popBackStack() }) }
         composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { navController.popBackStack() }) }
         composable(Routes.SETTINGS) {
             SettingsScreen(

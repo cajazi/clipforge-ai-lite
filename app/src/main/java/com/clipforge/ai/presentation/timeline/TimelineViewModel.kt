@@ -1,4 +1,4 @@
-package com.clipforge.ai.presentation.timeline
+﻿package com.clipforge.ai.presentation.timeline
 
 import android.app.Application
 import android.content.Context
@@ -57,7 +57,8 @@ data class TimelineUiState(
     val previewSplitBoundaryMs: Long?               = null,
     val resumePlaybackAfterPlaylistPrepared: Boolean = false,
     val activeTransition: ActiveTransitionState?     = null,
-    val lastAddedClipId: String?                     = null
+    val lastAddedClipId: String?                     = null,
+    val preserveTimelineScrollVersion: Long          = 0L
 )
 
 data class ActiveTransitionState(
@@ -73,7 +74,7 @@ data class ActiveTransitionState(
 )
 
 enum class EditorToolbarMode { PRIMARY, EDIT }
-enum class EditorInteractionMode { NONE, TRIM, SPLIT_ADJUST }
+enum class EditorInteractionMode { NONE, TRIM, BOUNDARY_TRIM, SPLIT_ADJUST }
 enum class TrimSide { LEFT, RIGHT }
 
 sealed class EditToolAction(val label: String) {
@@ -258,6 +259,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             activeTransition = activeTransition,
             audioTrackCount = audioTrackCount, textTrackCount = textTrackCount, overlayTrackCount = overlayTrackCount) }
         Log.d(TAG, "Rebuilt: ${clips.size} clips, total=${total}ms")
+        Log.d(
+            TAG,
+            "PREVIEW_PROJECT_RESTORED clips=${clips.size} playableClips=${clips.count { it.thumbnailUri != null && (it.mediaType == MediaType.VIDEO || it.mediaType == MediaType.OVERLAY_VIDEO) }} " +
+                "currentTimelineMs=$t activeClipId=${seg?.clipId} firstClipId=${clips.firstOrNull()?.id}"
+        )
         segments.forEachIndexed { i, s ->
             Log.d(
                 TAG,
@@ -358,9 +364,34 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectClip(id: String) {
-        _uiState.update { it.copy(selectedClipId = id) }
         val s = _uiState.value
-        Log.d(TAG, "select clip selectedClipId=$id activeClipId=${s.currentSegment?.clipId}")
+        val target = s.clips.firstOrNull { it.id == id }
+        val targetTime = target?.timelineStartMs?.coerceIn(0L, s.totalDurationMs) ?: s.globalProjectTimeMs
+        val seg = resolveSegment(s.segments, targetTime)
+        val activeTransition = resolveActiveTransition(s.clips, targetTime)
+        // AUTO-EDIT + AUTO-TRIM: tapping a clip enters EDIT mode and activates
+        // trim handles immediately, exactly like CapCut.
+        val switchingClip = _uiState.value.selectedClipId != id
+        _uiState.update {
+            it.copy(
+                selectedClipId = id,
+                globalProjectTimeMs = targetTime,
+                currentSegment = seg,
+                activeTransition = activeTransition,
+                isPlaying = false,
+                toolbarMode = EditorToolbarMode.EDIT,
+                interactionMode = EditorInteractionMode.TRIM,
+                // Reset trim gesture state when switching to a new clip
+                trimmingClipId = if (switchingClip) null else it.trimmingClipId,
+                trimPreviewFrameMs = if (switchingClip) null else it.trimPreviewFrameMs,
+                trimGestureActive = if (switchingClip) false else it.trimGestureActive,
+                trimSessionSide = if (switchingClip) null else it.trimSessionSide,
+                trimSessionStartMs = if (switchingClip) null else it.trimSessionStartMs,
+                trimSessionEndMs = if (switchingClip) null else it.trimSessionEndMs
+            )
+        }
+        Log.d(TAG, "select clip selectedClipId=$id activeClipId=${seg?.clipId} currentTimelineMs=$targetTime toolbarMode=EDIT")
+        Log.d(TAG, "PREVIEW_PLAYHEAD_SYNC reason=clipSelected selectedClipId=$id currentTimelineMs=$targetTime activeClipId=${seg?.clipId}")
     }
 
     fun onTrimStartDragged(clipId: String, deltaMs: Long) {
@@ -390,7 +421,18 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             }
         }
         if (side == TrimSide.LEFT) {
+            Log.d(
+                TAG,
+                "TRIM_LEFT_START clipId=$clipId trimStartMs=${clip?.sourceStartMs} trimEndMs=${clip?.sourceEndMs} " +
+                    "timelineStartMs=${clip?.timelineStartMs} timelineEndMs=${clip?.timelineEndMs}"
+            )
             Log.d(TAG, "LEFT_TRIM_DRAG_START clipId=$clipId sourceStartMs=${clip?.sourceStartMs} sourceEndMs=${clip?.sourceEndMs}")
+        } else {
+            Log.d(
+                TAG,
+                "TRIM_RIGHT_START clipId=$clipId trimStartMs=${clip?.sourceStartMs} trimEndMs=${clip?.sourceEndMs} " +
+                    "timelineStartMs=${clip?.timelineStartMs} timelineEndMs=${clip?.timelineEndMs}"
+            )
         }
         Log.d(
             TAG,
@@ -404,6 +446,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
         val sessionStart = _uiState.value.trimSessionStartMs
         val sessionEnd = _uiState.value.trimSessionEndMs
+        val playheadBeforeMs = _uiState.value.globalProjectTimeMs
         updateTrimmedClip(clipId) { clip ->
             val beforeStart = sessionStart ?: clip.sourceStartMs
             val beforeEnd = sessionEnd ?: clip.sourceEndMs
@@ -420,6 +463,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                         sourceEndMs = beforeEnd,
                         durationMs = newDurationMs
                     )
+                    val visibleStartMs = clip.timelineStartMs + ((newStart - beforeStart).coerceAtLeast(0L) / clip.playbackSpeed).roundToLong()
+                    Log.d(
+                        TAG,
+                        "TRIM_LEFT_UPDATE clipId=$clipId trimStartMs=$newStart trimEndMs=$beforeEnd " +
+                            "visibleStartMs=$visibleStartMs visibleEndStableMs=${clip.timelineEndMs} " +
+                            "deltaMs=$deltaMs sourceDeltaMs=$sourceDeltaMs"
+                    )
                     Log.d(
                         TAG,
                         "LEFT_TRIM_HANDLE_DRAG clipId=$clipId sourceStartMs before=$beforeStart after=${updated.sourceStartMs} " +
@@ -427,6 +477,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     )
                     Log.d(TAG, "LEFT_TRIM_DELTA_MS clipId=$clipId deltaMs=$deltaMs sourceDeltaMs=$sourceDeltaMs speed=${clip.playbackSpeed}")
                     Log.d(TAG, "LEFT_TRIM_PREVIEW_START clipId=$clipId value=${updated.sourceStartMs}")
+                    Log.d(TAG, "TRIM_PREVIEW_SYNC side=LEFT clipId=$clipId previewFrameMs=${updated.sourceStartMs}")
                     updated to updated.sourceStartMs
                 }
                 TrimSide.RIGHT -> {
@@ -444,21 +495,51 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     )
                     Log.d(
                         TAG,
+                        "TRIM_RIGHT_UPDATE clipId=$clipId trimStartMs=$beforeStart trimEndMs=$newEnd " +
+                            "visibleStartStableMs=${clip.timelineStartMs} deltaMs=$deltaMs sourceDeltaMs=$sourceDeltaMs"
+                    )
+                    Log.d(
+                        TAG,
                         "RIGHT_TRIM_HANDLE_DRAG clipId=$clipId sourceStartMs before=$beforeStart after=${updated.sourceStartMs} " +
                             "sourceEndMs before=$beforeEnd after=${updated.sourceEndMs}"
                     )
                     Log.d(TAG, "RIGHT_TRIM_DELTA_MS clipId=$clipId deltaMs=$deltaMs sourceDeltaMs=$sourceDeltaMs speed=${clip.playbackSpeed}")
+                    Log.d(TAG, "TRIM_PREVIEW_SYNC side=RIGHT clipId=$clipId previewFrameMs=${(updated.sourceEndMs - 1L).coerceAtLeast(updated.sourceStartMs)}")
                     updated to (updated.sourceEndMs - 1L).coerceAtLeast(updated.sourceStartMs)
                 }
             }
+        }
+        val updated = _uiState.value.clips.firstOrNull { it.id == clipId }
+        if (updated != null && side == TrimSide.LEFT && sessionStart != null) {
+            val visibleStartMs = updated.timelineStartMs +
+                ((updated.sourceStartMs - sessionStart).coerceAtLeast(0L) / updated.playbackSpeed).roundToLong()
+            if (_uiState.value.globalProjectTimeMs < visibleStartMs) {
+                val clampedMs = visibleStartMs.coerceIn(0L, _uiState.value.totalDurationMs)
+                val seg = resolveSegment(_uiState.value.segments, clampedMs)
+                _uiState.update {
+                    it.copy(
+                        globalProjectTimeMs = clampedMs,
+                        currentSegment = seg,
+                        activeTransition = resolveActiveTransition(it.clips, clampedMs)
+                    )
+                }
+                Log.d(TAG, "TRIM_PLAYHEAD_CLAMP side=LEFT clipId=$clipId beforeMs=$playheadBeforeMs afterMs=$clampedMs clamped=true")
+            } else {
+                Log.d(TAG, "TRIM_PLAYHEAD_CLAMP side=LEFT clipId=$clipId beforeMs=$playheadBeforeMs afterMs=${_uiState.value.globalProjectTimeMs} clamped=false")
+            }
+        } else if (side == TrimSide.RIGHT) {
+            Log.d(TAG, "TRIM_PLAYHEAD_CLAMP side=RIGHT clipId=$clipId beforeMs=$playheadBeforeMs afterMs=${_uiState.value.globalProjectTimeMs} clamped=false")
         }
     }
 
     fun commitTrim(clipId: String, side: TrimSide) {
         Log.d(TAG, "commitTrim side=$side clipId=$clipId")
+        val clip = _uiState.value.clips.firstOrNull { it.id == clipId }
         if (side == TrimSide.LEFT) {
-            val clip = _uiState.value.clips.firstOrNull { it.id == clipId }
+            Log.d(TAG, "TRIM_LEFT_COMMIT clipId=$clipId trimStartMs=${clip?.sourceStartMs} trimEndMs=${clip?.sourceEndMs} durationMs=${clip?.durationMs}")
             Log.d(TAG, "LEFT_TRIM_DRAG_END clipId=$clipId sourceStartMs=${clip?.sourceStartMs} sourceEndMs=${clip?.sourceEndMs}")
+        } else {
+            Log.d(TAG, "TRIM_RIGHT_COMMIT clipId=$clipId trimStartMs=${clip?.sourceStartMs} trimEndMs=${clip?.sourceEndMs} durationMs=${clip?.durationMs}")
         }
         Log.d(TAG, "TRIM_ENDED_CLEAR_FLAGS clipId=$clipId side=$side")
         onTrimFinished(clipId)
@@ -489,7 +570,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             it.copy(
                 trimmingClipId = null,
                 trimPreviewFrameMs = finalPreviewFrameMs,
-                trimGestureActive = false
+                trimGestureActive = false,
+                trimSessionSide = null,
+                trimSessionStartMs = null,
+                trimSessionEndMs = null,
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
             )
         }
         Log.d(TAG, "trimDragEnded clip=$clipId")
@@ -527,23 +612,33 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onEditToolClicked(action: EditToolAction) {
-        if (_uiState.value.interactionMode == EditorInteractionMode.SPLIT_ADJUST &&
-            action != EditToolAction.Undo &&
-            action != EditToolAction.Redo
-        ) {
-            commitSplitBoundary()
+        // SPLIT_ADJUST mode removed — split is instant like CapCut.
+        // No boundary commit needed before handling tool actions.
+        if (action == EditToolAction.Split) {
+            val s = _uiState.value
+            Log.d(
+                TAG,
+                "SPLIT_ACTION_DISPATCHED source=viewModel selectedClipId=${s.selectedClipId} " +
+                    "activeClipId=${s.currentSegment?.clipId} playheadMs=${s.globalProjectTimeMs}"
+            )
         }
         when (action) {
             EditToolAction.Back -> _uiState.update {
                 it.copy(
                     toolbarMode = EditorToolbarMode.PRIMARY,
+                    selectedClipId = null,
                     interactionMode = EditorInteractionMode.NONE,
                     trimmingClipId = null,
                     trimPreviewFrameMs = null,
                     trimGestureActive = false,
                     trimSessionSide = null,
                     trimSessionStartMs = null,
-                    trimSessionEndMs = null
+                    trimSessionEndMs = null,
+                    splitAdjustClipAId = null,
+                    splitAdjustClipBId = null,
+                    activeSplitLeftClipId = null,
+                    activeSplitRightClipId = null,
+                    previewSplitBoundaryMs = null
                 )
             }
             EditToolAction.Undo -> undo()
@@ -600,9 +695,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     fun undo() {
         val entry = undoStack.removeLastOrNull() ?: return
         viewModelScope.launch {
+            val playheadBeforeMs = _uiState.value.globalProjectTimeMs
             restoreTimelineSnapshot(entry.projectId, entry.before, entry.selectedBefore)
             redoStack.addLast(entry)
             updateHistoryAvailability()
+            Log.d(TAG, "PLAYHEAD_POSITION action=UNDO beforeMs=$playheadBeforeMs afterMs=${_uiState.value.globalProjectTimeMs}")
+            Log.d(TAG, "PREVIEW_SYNC action=UNDO currentTimelineMs=${_uiState.value.globalProjectTimeMs} selectedClipId=${entry.selectedBefore}")
+            Log.d(TAG, "TIMELINE_SYNC action=UNDO autoScroll=false preserveTimelineScrollVersion=${_uiState.value.preserveTimelineScrollVersion}")
             Log.d(TAG, "undo action=${entry.label}")
         }
     }
@@ -610,9 +709,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     fun redo() {
         val entry = redoStack.removeLastOrNull() ?: return
         viewModelScope.launch {
+            val playheadBeforeMs = _uiState.value.globalProjectTimeMs
             restoreTimelineSnapshot(entry.projectId, entry.after, entry.selectedAfter)
             undoStack.addLast(entry)
             updateHistoryAvailability()
+            Log.d(TAG, "PLAYHEAD_POSITION action=REDO beforeMs=$playheadBeforeMs afterMs=${_uiState.value.globalProjectTimeMs}")
+            Log.d(TAG, "PREVIEW_SYNC action=REDO currentTimelineMs=${_uiState.value.globalProjectTimeMs} selectedClipId=${entry.selectedAfter}")
+            Log.d(TAG, "TIMELINE_SYNC action=REDO autoScroll=false preserveTimelineScrollVersion=${_uiState.value.preserveTimelineScrollVersion}")
             Log.d(TAG, "redo action=${entry.label}")
         }
     }
@@ -760,12 +863,22 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val clip = selectedOrActiveClip() ?: return
         val stateBefore = _uiState.value
         val selectedBefore = stateBefore.selectedClipId
-            val splitOffset = (_uiState.value.globalProjectTimeMs - clip.timelineStartMs)
+        val playheadBeforeMs = stateBefore.globalProjectTimeMs
+        val currentSegmentBefore = stateBefore.currentSegment
+        val activeTransitionBefore = stateBefore.activeTransition
+        val splitOffset = (playheadBeforeMs - clip.timelineStartMs)
             .coerceIn(0L, clip.durationMs)
         if (splitOffset <= MIN_EDIT_SLICE_MS || clip.durationMs - splitOffset <= MIN_EDIT_SLICE_MS) {
             Log.d(TAG, "split ignored splitOffset=$splitOffset duration=${clip.durationMs}")
             return
         }
+        Log.d(
+            TAG,
+            "SPLIT_BEFORE clipId=${clip.id} selectedClipId=$selectedBefore playheadMs=$playheadBeforeMs " +
+                "clipStartMs=${clip.timelineStartMs} clipEndMs=${clip.timelineEndMs} splitOffsetMs=$splitOffset " +
+                "sourceFrameMs=${clip.sourceStartMs + (splitOffset * clip.playbackSpeed).roundToLong()} " +
+                "activeClipId=${currentSegmentBefore?.clipId} activeTransitionType=${activeTransitionBefore?.transitionType}"
+        )
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
@@ -776,16 +889,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val src = primary.getOrNull(originalIndex) ?: return@launch
             val sourceSplit = (clip.sourceStartMs + (splitOffset * clip.playbackSpeed).roundToLong())
                 .coerceIn(clip.sourceStartMs + MIN_EDIT_SLICE_MS, clip.sourceEndMs - MIN_EDIT_SLICE_MS)
-            val leftDurationMs = ((sourceSplit - clip.sourceStartMs).coerceAtLeast(MIN_EDIT_SLICE_MS) / clip.playbackSpeed)
-                .roundToLong()
-                .coerceAtLeast(MIN_EDIT_SLICE_MS)
-            val rightDurationMs = ((clip.sourceEndMs - sourceSplit).coerceAtLeast(MIN_EDIT_SLICE_MS) / clip.playbackSpeed)
-                .roundToLong()
-                .coerceAtLeast(MIN_EDIT_SLICE_MS)
+            val leftDurationMs = splitOffset.coerceAtLeast(MIN_EDIT_SLICE_MS)
+            val rightDurationMs = (clip.durationMs - splitOffset).coerceAtLeast(MIN_EDIT_SLICE_MS)
             val first = src.copy(
                 endMs = src.startMs + leftDurationMs,
                 trimStartMs = clip.sourceStartMs,
-                trimEndMs = sourceSplit
+                trimEndMs = sourceSplit,
+                transitionType = null,
+                transitionDurationMs = null
             )
             val second = src.copy(
                 id = UUID.randomUUID().toString(),
@@ -793,9 +904,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 startMs = first.endMs,
                 endMs = first.endMs + rightDurationMs,
                 trimStartMs = sourceSplit,
-                trimEndMs = clip.sourceEndMs,
-                transitionType = null,
-                transitionDurationMs = null
+                trimEndMs = clip.sourceEndMs
             )
             val reorderedPrimary = primary.toMutableList().apply {
                 removeAt(originalIndex)
@@ -805,92 +914,330 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val shiftedClips = reorderedPrimary.drop(originalIndex + 2).map { it.id }
             val finalPrimary = layoutPrimaryTimeline(reorderedPrimary)
             dao.upsertAll(finalPrimary)
+            val left = finalPrimary[originalIndex]
+            val right = finalPrimary[originalIndex + 1]
+            val splitTimelineMs = right.startMs
+            val splitSegment = TimelineSegment(
+                clipId = right.id,
+                mediaAssetId = right.mediaAssetId,
+                localUri = clip.thumbnailUri,
+                startMs = right.startMs,
+                endMs = right.endMs,
+                thumbnailUri = clip.thumbnailUri,
+                label = clip.label,
+                transition = null
+            )
+            val finalPrimaryById = finalPrimary.associateBy { it.id }
+            val finalUiClips = stateBefore.clips.flatMap { uiClip ->
+                if (uiClip.id == clip.id) {
+                    listOf(
+                        clip.copy(
+                            id = left.id,
+                            durationMs = leftDurationMs,
+                            transition = null,
+                            timelineStartMs = left.startMs,
+                            timelineEndMs = left.endMs,
+                            sourceEndMs = sourceSplit
+                        ),
+                        clip.copy(
+                            id = right.id,
+                            durationMs = rightDurationMs,
+                            transition = clip.transition,
+                            timelineStartMs = right.startMs,
+                            timelineEndMs = right.endMs,
+                            sourceStartMs = sourceSplit
+                        )
+                    )
+                } else {
+                    listOf(uiClip)
+                }
+            }.map { uiClip ->
+                finalPrimaryById[uiClip.id]?.let { entity ->
+                    uiClip.copy(
+                        timelineStartMs = entity.startMs,
+                        timelineEndMs = entity.endMs,
+                        durationMs = (entity.endMs - entity.startMs).coerceAtLeast(1L)
+                    )
+                } ?: uiClip
+            }.sortedBy { it.timelineStartMs }
+            val finalSegments = buildTimelineSegments(finalUiClips)
+            val finalActiveTransition = resolveActiveTransition(finalUiClips, playheadBeforeMs)
+            // CAPCUT SPLIT: instant split at the playhead, select the right clip.
+            // No SPLIT_ADJUST mode - split is final immediately.
             _uiState.update {
                 it.copy(
+                    clips = finalUiClips,
+                    segments = finalSegments,
+                    totalDurationMs = finalSegments.lastOrNull()?.endMs ?: it.totalDurationMs,
                     selectedClipId = second.id,
+                    globalProjectTimeMs = playheadBeforeMs,
+                    currentSegment = splitSegment,
                     isPlaying = false,
                     resumePlaybackAfterPlaylistPrepared = stateBefore.isPlaying,
+                    toolbarMode = EditorToolbarMode.EDIT,
                     interactionMode = EditorInteractionMode.NONE,
                     splitAdjustClipAId = null,
                     splitAdjustClipBId = null,
                     activeSplitLeftClipId = null,
                     activeSplitRightClipId = null,
+                    trimmingClipId = null,
                     trimPreviewFrameMs = null,
-                    previewSplitBoundaryMs = null
+                    trimGestureActive = false,
+                    trimSessionSide = null,
+                    trimSessionStartMs = null,
+                    trimSessionEndMs = null,
+                    previewSplitBoundaryMs = null,
+                    activeTransition = finalActiveTransition,
+                    preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
                 )
             }
             recordHistory(pid, "Split", before, dao.getTimelineForProjectOnce(pid), selectedBefore, second.id)
-            val left = finalPrimary[originalIndex]
-            val right = finalPrimary[originalIndex + 1]
+            val sourceFrameAfterMs = right.trimStartMs
             Log.d(
                 TAG,
-                "split completed activeClipId=${clip.id} activeOrderIndex=${src.orderIndex} currentTimelineMs=${_uiState.value.globalProjectTimeMs} " +
+                "SPLIT_AFTER leftClipId=${left.id} rightClipId=${right.id} splitAtMs=$splitTimelineMs " +
+                    "playheadMs=$playheadBeforeMs selectedClipId=${second.id} leftDurationMs=$leftDurationMs " +
+                    "rightDurationMs=$rightDurationMs clipCountBefore=${primary.size} clipCountAfter=${finalPrimary.size}"
+            )
+            Log.d(
+                TAG,
+                "PLAYHEAD_POSITION beforeMs=$playheadBeforeMs afterMs=$playheadBeforeMs stationary=${playheadBeforeMs == splitTimelineMs}"
+            )
+            Log.d(
+                TAG,
+                "PREVIEW_SYNC beforeClipId=${currentSegmentBefore?.clipId} afterClipId=${right.id} " +
+                    "beforeSourceFrameMs=$sourceSplit afterSourceFrameMs=$sourceFrameAfterMs unchanged=${sourceSplit == sourceFrameAfterMs}"
+            )
+            Log.d(
+                TAG,
+                "TIMELINE_SYNC autoScroll=false preserveTimelineScrollVersion=${_uiState.value.preserveTimelineScrollVersion} " +
+                    "splitAtPlayhead=true transitionEngineTouched=false mediaStoreTouched=false"
+            )
+            Log.d(
+                TAG,
+                "split completed activeClipId=${right.id} activeOrderIndex=${right.orderIndex} currentTimelineMs=$splitTimelineMs " +
                     "localSplitMs=$sourceSplit speed=${clip.playbackSpeed} leftDurationMs=$leftDurationMs rightDurationMs=$rightDurationMs " +
                     "leftSourceRange=${clip.sourceStartMs}-$sourceSplit rightSourceRange=$sourceSplit-${clip.sourceEndMs} " +
                     "leftClipId=${left.id} leftOrderIndex=${left.orderIndex} " +
                     "rightClipId=${right.id} rightOrderIndex=${right.orderIndex} shiftedClips=$shiftedClips " +
                     "finalClipOrder=${finalPrimary.map { "${it.id}:${it.orderIndex}" }} " +
-                    "timelineChangeReason=splitSelectedAtPlayhead playbackPausedForPlaylistRebuild=true " +
+                    "timelineChangeReason=capcutImmediateSplit splitAtPlayhead=true selectedRightClip=true playbackPausedForPlaylistRebuild=true " +
+                    "transitionPreservedOnRightClip=${second.transitionType == src.transitionType} internalSplitTransition=false " +
                     "resumePlaybackAfterPlaylistPrepared=${stateBefore.isPlaying}"
             )
-            Log.d(TAG, "split clip=${clip.id} at=${_uiState.value.globalProjectTimeMs} newClip=${second.id}")
+            Log.d(TAG, "split clip=${clip.id} at=$splitTimelineMs newClip=${second.id}")
         }
     }
 
     fun enterSplitAdjustMode(clipAId: String, clipBId: String) {
         pause()
+        val clipA = _uiState.value.clips.firstOrNull { it.id == clipAId }
         val clipB = _uiState.value.clips.firstOrNull { it.id == clipBId }
+        val boundaryMs = clipA?.timelineEndMs ?: clipB?.timelineStartMs ?: _uiState.value.globalProjectTimeMs
         _uiState.update {
             it.copy(
-                interactionMode = EditorInteractionMode.SPLIT_ADJUST,
+                interactionMode = EditorInteractionMode.BOUNDARY_TRIM,
                 splitAdjustClipAId = clipAId,
                 splitAdjustClipBId = clipBId,
                 activeSplitLeftClipId = clipAId,
                 activeSplitRightClipId = clipBId,
-                selectedClipId = clipBId,
+                selectedClipId = null,
+                globalProjectTimeMs = boundaryMs.coerceIn(0L, it.totalDurationMs),
+                currentSegment = resolveSegment(it.segments, boundaryMs),
                 trimPreviewFrameMs = clipB?.sourceStartMs,
-                previewSplitBoundaryMs = clipB?.sourceStartMs
+                previewSplitBoundaryMs = clipB?.sourceStartMs,
+                trimSessionStartMs = clipA?.sourceEndMs,
+                trimSessionEndMs = clipB?.sourceStartMs,
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
             )
         }
-        Log.d(TAG, "entering SPLIT_ADJUST active left clip id=$clipAId active right clip id=$clipBId")
+        Log.d(
+            TAG,
+            "BOUNDARY_SELECTED leftClipId=$clipAId rightClipId=$clipBId sameSource=${clipA?.mediaAssetId == clipB?.mediaAssetId} " +
+                "leftTrimEndMs=${clipA?.sourceEndMs} rightTrimStartMs=${clipB?.sourceStartMs} boundaryMs=$boundaryMs"
+        )
+        Log.d(TAG, "entering BOUNDARY_TRIM active left clip id=$clipAId active right clip id=$clipBId")
     }
 
-    fun updateSplitBoundaryPreview(deltaMs: Long) {
+    fun startSplitBoundaryTrim(side: TrimSide) {
+        val s = _uiState.value
+        val clipAId = s.splitAdjustClipAId ?: return
+        val clipBId = s.splitAdjustClipBId ?: return
+        val clipA = s.clips.firstOrNull { it.id == clipAId } ?: return
+        val clipB = s.clips.firstOrNull { it.id == clipBId } ?: return
+        _uiState.update {
+            it.copy(
+                trimGestureActive = true,
+                trimSessionSide = side,
+                trimSessionStartMs = clipA.sourceEndMs,
+                trimSessionEndMs = clipB.sourceStartMs
+            )
+        }
+        Log.d(
+            TAG,
+            "BOUNDARY_TRIM_START side=$side leftClipId=$clipAId rightClipId=$clipBId " +
+                "leftTrimEndMs=${clipA.sourceEndMs} rightTrimStartMs=${clipB.sourceStartMs}"
+        )
+    }
+
+    fun startSharedBoundaryTrim() {
+        val s = _uiState.value
+        val clipAId = s.splitAdjustClipAId ?: return
+        val clipBId = s.splitAdjustClipBId ?: return
+        val clipA = s.clips.firstOrNull { it.id == clipAId } ?: return
+        val clipB = s.clips.firstOrNull { it.id == clipBId } ?: return
+        _uiState.update {
+            it.copy(
+                trimGestureActive = true,
+                trimSessionSide = null,
+                trimSessionStartMs = clipA.sourceEndMs,
+                trimSessionEndMs = clipB.sourceStartMs
+            )
+        }
+        Log.d(
+            TAG,
+            "BOUNDARY_TRIM_START leftClipId=$clipAId rightClipId=$clipBId " +
+                "boundarySourceMs=${clipA.sourceEndMs} rightTrimStartMs=${clipB.sourceStartMs}"
+        )
+    }
+
+    fun updateSharedBoundaryTrim(deltaMs: Long) {
         if (deltaMs == 0L) return
         val s = _uiState.value
         val clipAId = s.splitAdjustClipAId ?: return
         val clipBId = s.splitAdjustClipBId ?: return
         val clipA = s.clips.firstOrNull { it.id == clipAId } ?: return
         val clipB = s.clips.firstOrNull { it.id == clipBId } ?: return
+        val baseBoundary = s.trimSessionStartMs ?: clipA.sourceEndMs
+        val sourceDeltaMs = (deltaMs * clipA.playbackSpeed).roundToLong()
         val minBoundary = clipA.sourceStartMs + MIN_SPLIT_SLICE_MS
         val maxBoundary = clipB.sourceEndMs - MIN_SPLIT_SLICE_MS
-        val nextBoundary = (clipA.sourceEndMs + deltaMs).coerceIn(minBoundary, maxBoundary)
-        if (nextBoundary == clipA.sourceEndMs) return
+        val nextBoundary = (baseBoundary + sourceDeltaMs).coerceIn(minBoundary, maxBoundary)
         val updatedClips = s.clips.map { clip ->
             when (clip.id) {
                 clipAId -> clip.copy(
                     sourceEndMs = nextBoundary,
-                    durationMs = (nextBoundary - clip.sourceStartMs).coerceAtLeast(MIN_SPLIT_SLICE_MS)
+                    durationMs = ((nextBoundary - clip.sourceStartMs).coerceAtLeast(MIN_SPLIT_SLICE_MS) / clip.playbackSpeed)
+                        .roundToLong()
+                        .coerceAtLeast(MIN_SPLIT_SLICE_MS)
                 )
                 clipBId -> clip.copy(
                     sourceStartMs = nextBoundary,
-                    durationMs = (clip.sourceEndMs - nextBoundary).coerceAtLeast(MIN_SPLIT_SLICE_MS)
+                    durationMs = ((clip.sourceEndMs - nextBoundary).coerceAtLeast(MIN_SPLIT_SLICE_MS) / clip.playbackSpeed)
+                        .roundToLong()
+                        .coerceAtLeast(MIN_SPLIT_SLICE_MS)
                 )
                 else -> clip
             }
-        }
+        }.withRecalculatedTimelineBounds()
+        val segments = buildTimelineSegments(updatedClips)
+        val left = updatedClips.firstOrNull { it.id == clipAId } ?: return
+        val boundaryTimeMs = left.timelineEndMs.coerceIn(0L, segments.lastOrNull()?.endMs ?: s.totalDurationMs)
         _uiState.update {
             it.copy(
                 clips = updatedClips,
+                segments = segments,
+                totalDurationMs = segments.lastOrNull()?.endMs ?: it.totalDurationMs,
+                globalProjectTimeMs = boundaryTimeMs,
+                currentSegment = resolveSegment(segments, boundaryTimeMs),
                 trimPreviewFrameMs = nextBoundary,
                 previewSplitBoundaryMs = nextBoundary,
-                globalProjectTimeMs = clipA.timelineStartMs + (nextBoundary - clipA.sourceStartMs)
+                activeTransition = resolveActiveTransition(updatedClips, boundaryTimeMs),
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
             )
         }
-        Log.v(TAG, "dragging split boundary clipA=$clipAId clipB=$clipBId boundary=$nextBoundary")
+        Log.d(
+            TAG,
+            "BOUNDARY_TRIM_UPDATE leftClipId=$clipAId rightClipId=$clipBId boundarySourceMs=$nextBoundary " +
+                "boundaryTimeMs=$boundaryTimeMs noGap=true noOverlap=true"
+        )
     }
 
-    fun commitSplitBoundary() {
+    fun commitSharedBoundaryTrim() {
+        commitSplitBoundary(null)
+    }
+
+    fun updateSplitBoundaryPreview(side: TrimSide, deltaMs: Long) {
+        if (deltaMs == 0L) return
+        val s = _uiState.value
+        val clipAId = s.splitAdjustClipAId ?: return
+        val clipBId = s.splitAdjustClipBId ?: return
+        val clipA = s.clips.firstOrNull { it.id == clipAId } ?: return
+        val clipB = s.clips.firstOrNull { it.id == clipBId } ?: return
+        val leftBaseEnd = s.trimSessionStartMs ?: clipA.sourceEndMs
+        val rightBaseStart = s.trimSessionEndMs ?: clipB.sourceStartMs
+        val updatedClips = s.clips.map { clip ->
+            when {
+                side == TrimSide.LEFT && clip.id == clipAId -> {
+                    val sourceDeltaMs = (deltaMs * clip.playbackSpeed).roundToLong()
+                    val minEnd = clip.sourceStartMs + MIN_SPLIT_SLICE_MS
+                    val maxEnd = clip.sourceDurationMs.coerceAtLeast(minEnd)
+                    val nextEnd = (leftBaseEnd + sourceDeltaMs).coerceIn(minEnd, maxEnd)
+                    clip.copy(
+                        sourceEndMs = nextEnd,
+                        durationMs = ((nextEnd - clip.sourceStartMs).coerceAtLeast(MIN_SPLIT_SLICE_MS) / clip.playbackSpeed)
+                            .roundToLong()
+                            .coerceAtLeast(MIN_SPLIT_SLICE_MS)
+                    )
+                }
+                side == TrimSide.RIGHT && clip.id == clipBId -> {
+                    val sourceDeltaMs = (deltaMs * clip.playbackSpeed).roundToLong()
+                    val minStart = 0L
+                    val maxStart = (clip.sourceEndMs - MIN_SPLIT_SLICE_MS).coerceAtLeast(minStart)
+                    val nextStart = (rightBaseStart + sourceDeltaMs).coerceIn(minStart, maxStart)
+                    clip.copy(
+                        sourceStartMs = nextStart,
+                        durationMs = ((clip.sourceEndMs - nextStart).coerceAtLeast(MIN_SPLIT_SLICE_MS) / clip.playbackSpeed)
+                            .roundToLong()
+                            .coerceAtLeast(MIN_SPLIT_SLICE_MS)
+                    )
+                }
+                else -> clip
+            }
+        }.withRecalculatedTimelineBounds()
+        val updatedLeft = updatedClips.firstOrNull { it.id == clipAId } ?: clipA
+        val updatedRight = updatedClips.firstOrNull { it.id == clipBId } ?: clipB
+        val segments = buildTimelineSegments(updatedClips)
+        val boundaryMs = updatedLeft.timelineEndMs.coerceIn(0L, segments.lastOrNull()?.endMs ?: s.totalDurationMs)
+        val previewFrameMs = when (side) {
+            TrimSide.LEFT -> (updatedLeft.sourceEndMs - 1L).coerceAtLeast(updatedLeft.sourceStartMs)
+            TrimSide.RIGHT -> updatedRight.sourceStartMs
+        }
+        val sourceContinuous = updatedLeft.mediaAssetId == updatedRight.mediaAssetId &&
+            updatedLeft.sourceEndMs == updatedRight.sourceStartMs
+        _uiState.update {
+            it.copy(
+                clips = updatedClips,
+                segments = segments,
+                totalDurationMs = segments.lastOrNull()?.endMs ?: it.totalDurationMs,
+                currentSegment = resolveSegment(segments, boundaryMs),
+                globalProjectTimeMs = boundaryMs,
+                trimPreviewFrameMs = previewFrameMs,
+                previewSplitBoundaryMs = previewFrameMs,
+                activeTransition = resolveActiveTransition(updatedClips, boundaryMs),
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
+            )
+        }
+        Log.d(
+            TAG,
+                "${if (side == TrimSide.LEFT) "BOUNDARY_LEFT_UPDATE" else "BOUNDARY_RIGHT_UPDATE"} " +
+                    "leftClipId=$clipAId rightClipId=$clipBId deltaMs=$deltaMs " +
+                "leftTrimEndMs=${updatedLeft.sourceEndMs} rightTrimStartMs=${updatedRight.sourceStartMs} boundaryMs=$boundaryMs"
+        )
+        Log.d(TAG, "BOUNDARY_PREVIEW_SYNC side=$side previewFrameMs=$previewFrameMs boundaryMs=$boundaryMs")
+        Log.d(TAG, "BOUNDARY_PLAYHEAD_SYNC side=$side boundaryMs=$boundaryMs playheadMs=${_uiState.value.globalProjectTimeMs} clamped=false")
+        Log.d(
+            TAG,
+            "BOUNDARY_JOIN_CONTINUITY_CHECK side=$side noGap=true noOverlap=true sameSource=${updatedLeft.mediaAssetId == updatedRight.mediaAssetId} " +
+                "sourceContinuous=$sourceContinuous leftEnd=${updatedLeft.sourceEndMs} rightStart=${updatedRight.sourceStartMs}"
+        )
+    }
+
+    fun updateSplitBoundaryPreview(deltaMs: Long) {
+        updateSplitBoundaryPreview(TrimSide.LEFT, deltaMs)
+    }
+
+    fun commitSplitBoundary(side: TrimSide? = null) {
         val pid = currentProjectId ?: return
         val s = _uiState.value
         val clipAId = s.splitAdjustClipAId ?: return
@@ -899,9 +1246,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val clipB = s.clips.firstOrNull { it.id == clipBId } ?: return
         val selectedBefore = s.selectedClipId
         val committedClips = s.clips.withRecalculatedTimelineBounds()
-        rebuildTimeline(committedClips)
+        val segments = buildTimelineSegments(committedClips)
+        val boundaryMs = clipA.timelineEndMs.coerceIn(0L, segments.lastOrNull()?.endMs ?: s.totalDurationMs)
+        val sourceContinuous = clipA.mediaAssetId == clipB.mediaAssetId && clipA.sourceEndMs == clipB.sourceStartMs
         _uiState.update {
             it.copy(
+                clips = committedClips,
+                segments = segments,
+                totalDurationMs = segments.lastOrNull()?.endMs ?: it.totalDurationMs,
                 interactionMode = EditorInteractionMode.NONE,
                 splitAdjustClipAId = null,
                 splitAdjustClipBId = null,
@@ -909,7 +1261,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 activeSplitRightClipId = null,
                 trimPreviewFrameMs = null,
                 previewSplitBoundaryMs = null,
-                selectedClipId = clipBId
+                trimGestureActive = false,
+                trimSessionSide = null,
+                trimSessionStartMs = null,
+                trimSessionEndMs = null,
+                selectedClipId = clipBId,
+                globalProjectTimeMs = boundaryMs,
+                currentSegment = resolveSegment(segments, boundaryMs),
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
             )
         }
         viewModelScope.launch {
@@ -932,8 +1291,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 )
             )
             normalizePrimaryTimeline(pid)
-            recordHistory(pid, "Adjust Split", before, dao.getTimelineForProjectOnce(pid), selectedBefore, clipBId)
-            Log.d(TAG, "commit split boundary clipA=$clipAId clipB=$clipBId boundary=${clipA.sourceEndMs}")
+            recordHistory(pid, "Boundary Trim", before, dao.getTimelineForProjectOnce(pid), selectedBefore, clipBId)
+            Log.d(
+                TAG,
+                "BOUNDARY_TRIM_COMMIT side=${side ?: s.trimSessionSide} leftClipId=$clipAId rightClipId=$clipBId " +
+                    "leftTrimEndMs=${clipA.sourceEndMs} rightTrimStartMs=${clipB.sourceStartMs} boundaryMs=$boundaryMs"
+            )
+            Log.d(
+                TAG,
+                "BOUNDARY_JOIN_CONTINUITY_CHECK commit=true noGap=true noOverlap=true sameSource=${clipA.mediaAssetId == clipB.mediaAssetId} " +
+                    "sourceContinuous=$sourceContinuous leftEnd=${clipA.sourceEndMs} rightStart=${clipB.sourceStartMs}"
+            )
         }
     }
 
@@ -955,9 +1323,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 activeSplitLeftClipId = null,
                 activeSplitRightClipId = null,
                 trimPreviewFrameMs = null,
-                previewSplitBoundaryMs = null
+                previewSplitBoundaryMs = null,
+                trimGestureActive = false,
+                trimSessionSide = null,
+                trimSessionStartMs = null,
+                trimSessionEndMs = null
             )
         }
+        Log.d(TAG, "BOUNDARY_TRIM_CANCEL")
         Log.d(TAG, "split adjust cancel")
     }
 
@@ -1389,8 +1762,21 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun List<ClipUiModel>.withRecalculatedTimelineBounds(): List<ClipUiModel> {
+        Log.d(
+            TAG,
+            "TIMELINE_ADJACENCY_NORMALIZE_BEFORE source=uiClipBounds count=$size " +
+                "bounds=${map { "${it.id}:${it.timelineStartMs}-${it.timelineEndMs}" }}"
+        )
         var cursor = 0L
-        return map { clip ->
+        val normalized = map { clip ->
+            if (clip.timelineStartMs != cursor) {
+                Log.w(
+                    TAG,
+                    "TIMELINE_GAP_DETECTED source=uiClipBounds clipId=${clip.id} expectedStartMs=$cursor actualStartMs=${clip.timelineStartMs} " +
+                        "gapMs=${clip.timelineStartMs - cursor}"
+                )
+                Log.d(TAG, "TIMELINE_GAP_FIXED source=uiClipBounds clipId=${clip.id} fixedStartMs=$cursor")
+            }
             val duration = clip.durationMs.coerceAtLeast(MIN_TRIM_DURATION_MS)
             clip.copy(
                 durationMs = duration,
@@ -1398,6 +1784,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 timelineEndMs = cursor + duration
             ).also { cursor += duration }
         }
+        Log.d(
+            TAG,
+            "TIMELINE_ADJACENCY_NORMALIZE_AFTER source=uiClipBounds count=${normalized.size} " +
+                "bounds=${normalized.map { "${it.id}:${it.timelineStartMs}-${it.timelineEndMs}" }}"
+        )
+        return normalized
     }
 
     private fun hasGapBetweenSegments(segments: List<TimelineSegment>): Boolean {
@@ -1496,12 +1888,31 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun layoutPrimaryTimeline(items: List<TimelineItemEntity>): List<TimelineItemEntity> {
+        Log.d(
+            TAG,
+            "TIMELINE_ADJACENCY_NORMALIZE_BEFORE source=primaryTimeline count=${items.size} " +
+                "bounds=${items.map { "${it.id}:${it.startMs}-${it.endMs}" }}"
+        )
         var cursor = 0L
-        return items.mapIndexed { index, item ->
+        val normalized = items.mapIndexed { index, item ->
+            if (item.startMs != cursor) {
+                Log.w(
+                    TAG,
+                    "TIMELINE_GAP_DETECTED source=primaryTimeline clipId=${item.id} expectedStartMs=$cursor actualStartMs=${item.startMs} " +
+                        "gapMs=${item.startMs - cursor}"
+                )
+                Log.d(TAG, "TIMELINE_GAP_FIXED source=primaryTimeline clipId=${item.id} fixedStartMs=$cursor")
+            }
             val duration = (item.endMs - item.startMs).coerceAtLeast(1L)
             item.copy(trackIndex = 0, orderIndex = index, startMs = cursor, endMs = cursor + duration)
                 .also { cursor += duration }
         }
+        Log.d(
+            TAG,
+            "TIMELINE_ADJACENCY_NORMALIZE_AFTER source=primaryTimeline count=${normalized.size} " +
+                "bounds=${normalized.map { "${it.id}:${it.startMs}-${it.endMs}" }}"
+        )
+        return normalized
     }
 
     private fun recordHistory(
@@ -1535,7 +1946,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     ) {
         dao.deleteAllForProject(projectId)
         if (items.isNotEmpty()) dao.upsertAll(items)
-        _uiState.update { it.copy(selectedClipId = selectedClipId) }
+        _uiState.update {
+            it.copy(
+                selectedClipId = selectedClipId,
+                isPlaying = false,
+                resumePlaybackAfterPlaylistPrepared = false,
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
+            )
+        }
     }
 
     private fun updateHistoryAvailability() {

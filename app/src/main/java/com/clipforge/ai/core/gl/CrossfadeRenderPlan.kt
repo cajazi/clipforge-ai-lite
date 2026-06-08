@@ -1,6 +1,7 @@
-package com.clipforge.ai.core.gl
+﻿package com.clipforge.ai.core.gl
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.clipforge.ai.data.local.database.ClipForgeDatabase
 import kotlinx.coroutines.Dispatchers
@@ -10,10 +11,9 @@ import kotlinx.coroutines.withContext
  * Builds an ordered render plan for a project's timeline, deciding where real
  * crossfade segments go vs. plain clips.
  *
- * HONEST RULE (no fake feature labels): only DISSOLVE / CROSS_DISSOLVE transitions
- * render the real crossfade. Every other transitionType (Slide, Blur, Glitch, 3D...)
- * has no implementation yet, so it falls back to a PLAIN CUT - it is NOT dressed up
- * as a dissolve. Each type lights up for real when its shader is built.
+ * HONEST RULE (no fake feature labels): only transition families with an exported
+ * implementation are planned as real effects. Unsupported families fall back to a
+ * PLAIN CUT - they are NOT dressed up as a dissolve.
  *
  * This stage LOGS the plan only - it does not render. Verify the plan matches the
  * timeline, then the executor builds on it.
@@ -21,12 +21,17 @@ import kotlinx.coroutines.withContext
 object CrossfadeRenderPlan {
 
     private const val TAG = "CROSSFADE_PLAN"
+    private const val MIN_RENDER_SLICE_MS = 100L
 
     // transitionType strings that we can actually render today.
     private val REAL_CROSSFADE_TYPES = setOf("DISSOLVE", "CROSS_DISSOLVE")
     // Fade-through-a-color transitions (FADE + FADE_BLACK -> black, FADE_WHITE -> white).
     private val FADE_BLACK_TYPES = setOf("FADE", "FADE_BLACK")
     private val FADE_WHITE_TYPES = setOf("FADE_WHITE")
+    // Slide transitions: clip B slides in over static clip A (direction = B motion).
+    private val SLIDE_TYPES = setOf("SLIDE_LEFT", "SLIDE_RIGHT", "SLIDE_UP", "SLIDE_DOWN")
+    // Zoom transitions: clip B zooms into place over static clip A.
+    private val ZOOM_TYPES = setOf("ZOOM_IN", "ZOOM_OUT")
 
     data class ClipInfo(
         val path: String,
@@ -50,6 +55,18 @@ object CrossfadeRenderPlan {
             val pathB: String, val bHeadStartMs: Long, val bHeadEndMs: Long,
             val halfDurationMs: Long, val colorInt: Int
         ) : Op()
+        /** Slide clip B in over a static clip A; direction is the motion of B. */
+        data class Slide(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val direction: String
+        ) : Op()
+        /** Zoom clip B into place over a static clip A. */
+        data class Zoom(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val mode: String
+        ) : Op()
     }
 
     /**
@@ -57,8 +74,14 @@ object CrossfadeRenderPlan {
      */
     suspend fun build(context: Context, projectId: String): List<Op> =
         withContext(Dispatchers.IO) {
+            Log.d(
+                TAG,
+                "BUILD_START projectId=$projectId device=${Build.MANUFACTURER}/${Build.MODEL} " +
+                    "sdk=${Build.VERSION.SDK_INT} thread=${Thread.currentThread().name}"
+            )
             val db = ClipForgeDatabase.getInstance(context)
             val items = db.timelineDao().getTimelineForProjectOnce(projectId)
+            Log.d(TAG, "timeline item count=${items.size}")
 
             // Collect video items with their paths + transition info, in order.
             data class Entry(
@@ -67,7 +90,9 @@ object CrossfadeRenderPlan {
                 val trimEndMs: Long,
                 val transitionType: String?,
                 val transitionDurationMs: Long?
-            )
+            ) {
+                val durationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0L)
+            }
             val entries = mutableListOf<Entry>()
             for (item in items) {
                 val asset = db.timelineDao().getMediaAssetForItem(item.mediaAssetId) ?: continue
@@ -76,6 +101,10 @@ object CrossfadeRenderPlan {
                 val hasRealTrim = item.trimEndMs > item.trimStartMs
                 val srcStart = if (hasRealTrim) item.trimStartMs else 0L
                 val srcEnd = if (hasRealTrim) item.trimEndMs else assetDur
+                if (srcEnd <= srcStart) {
+                    Log.d(TAG, "skip invalid clip " + asset.localUri.substringAfterLast('/') + " resolved=[" + srcStart + ".." + srcEnd + "] assetDur=" + assetDur)
+                    continue
+                }
                 Log.d(TAG, "entry " + asset.localUri.substringAfterLast('/') + " trim=[" + item.trimStartMs + ".." + item.trimEndMs + "] assetDur=" + assetDur + " resolved=[" + srcStart + ".." + srcEnd + "] transition=" + item.transitionType + " dur=" + item.transitionDurationMs)
                 entries.add(
                     Entry(
@@ -92,6 +121,7 @@ object CrossfadeRenderPlan {
                 Log.d(TAG, "no video clips")
                 return@withContext emptyList()
             }
+            Log.d(TAG, "video entry count=${entries.size}")
 
             // For each clip, how much is consumed by an incoming crossfade (head) and
             // an outgoing crossfade (tail).
@@ -103,24 +133,104 @@ object CrossfadeRenderPlan {
             val isDip = BooleanArray(entries.size)
             val dipColorArr = IntArray(entries.size)
             val dipDurMsArr = LongArray(entries.size)
+            val isSlide = BooleanArray(entries.size)
+            val slideDurArr = LongArray(entries.size)
+            val slideDirArr = arrayOfNulls<String>(entries.size)
+            val isZoom = BooleanArray(entries.size)
+            val zoomDurArr = LongArray(entries.size)
+            val zoomModeArr = arrayOfNulls<String>(entries.size)
             for (i in 0 until entries.size - 1) {
                 val t = entries[i].transitionType?.uppercase()
                 val durMs = entries[i].transitionDurationMs ?: 0L
+                Log.d(TAG, "boundary $i->${i + 1} rawType=$t rawDurationMs=$durMs leftDur=${entries[i].durationMs} rightDur=${entries[i + 1].durationMs}")
                 if (t in REAL_CROSSFADE_TYPES && durMs > 0L) {
                     isCrossfade[i] = true
                     crossfadeMsArr[i] = durMs
-                    tailConsumed[i] += durMs
-                    headConsumed[i + 1] += durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=XFADE requestedMs=$durMs")
                 } else if ((t in FADE_BLACK_TYPES || t in FADE_WHITE_TYPES) && durMs > 0L) {
                     isDip[i] = true
                     dipColorArr[i] = if (t in FADE_WHITE_TYPES) android.graphics.Color.WHITE else android.graphics.Color.BLACK
                     dipDurMsArr[i] = durMs
-                    val half = durMs / 2
-                    tailConsumed[i] += half
-                    headConsumed[i + 1] += half
+                    Log.d(TAG, "boundary $i->${i + 1} plan=DIP requestedMs=$durMs color=${dipColorArr[i]}")
+                } else if (t in SLIDE_TYPES && durMs > 0L) {
+                    isSlide[i] = true
+                    slideDirArr[i] = t
+                    slideDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=SLIDE requestedMs=$durMs direction=$t")
+                } else if (t in ZOOM_TYPES && durMs > 0L) {
+                    isZoom[i] = true
+                    zoomModeArr[i] = t
+                    zoomDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=ZOOM requestedMs=$durMs mode=$t")
                 } else if (t != null && t != "NONE" && durMs > 0L) {
                     Log.d(TAG, "boundary $i->${i + 1} type=$t NOT implemented -> plain cut")
                 }
+            }
+
+            fun boundaryConsumption(i: Int): Long = when {
+                isCrossfade[i] -> crossfadeMsArr[i]
+                isDip[i] -> dipDurMsArr[i] / 2
+                isSlide[i] -> slideDurArr[i]
+                isZoom[i] -> zoomDurArr[i]
+                else -> 0L
+            }
+
+            fun setBoundaryConsumption(i: Int, consumptionMs: Long) {
+                when {
+                    isCrossfade[i] -> crossfadeMsArr[i] = consumptionMs
+                    isDip[i] -> dipDurMsArr[i] = consumptionMs * 2
+                    isSlide[i] -> slideDurArr[i] = consumptionMs
+                    isZoom[i] -> zoomDurArr[i] = consumptionMs
+                }
+            }
+
+            repeat(3) {
+                java.util.Arrays.fill(headConsumed, 0L)
+                java.util.Arrays.fill(tailConsumed, 0L)
+                for (i in 0 until entries.size - 1) {
+                    val consumption = boundaryConsumption(i)
+                    tailConsumed[i] += consumption
+                    headConsumed[i + 1] += consumption
+                }
+
+                for (i in entries.indices) {
+                    val consumed = headConsumed[i] + tailConsumed[i]
+                    val maxConsumable = (entries[i].durationMs - MIN_RENDER_SLICE_MS).coerceAtLeast(0L)
+                    if (consumed > maxConsumable) {
+                        val scale = if (consumed == 0L) 0f else maxConsumable.toFloat() / consumed.toFloat()
+                        if (i > 0) {
+                            val previous = boundaryConsumption(i - 1)
+                            setBoundaryConsumption(i - 1, (previous * scale).toLong())
+                        }
+                        if (i < entries.lastIndex) {
+                            val next = boundaryConsumption(i)
+                            setBoundaryConsumption(i, (next * scale).toLong())
+                        }
+                        Log.d(TAG, "clamped transitions around clip $i consumed=$consumed max=$maxConsumable scale=$scale")
+                    }
+                }
+            }
+
+            java.util.Arrays.fill(headConsumed, 0L)
+            java.util.Arrays.fill(tailConsumed, 0L)
+            for (i in 0 until entries.size - 1) {
+                val consumption = boundaryConsumption(i)
+                if (consumption <= 0L) {
+                    Log.d(TAG, "boundary $i->${i + 1} disabled after clamp consumption=$consumption")
+                    isCrossfade[i] = false
+                    isDip[i] = false
+                    isSlide[i] = false
+                    isZoom[i] = false
+                    continue
+                }
+                tailConsumed[i] += consumption
+                headConsumed[i + 1] += consumption
+                Log.d(
+                    TAG,
+                    "boundary $i->${i + 1} finalConsumptionMs=$consumption xfade=${isCrossfade[i]} " +
+                        "dip=${isDip[i]} slide=${isSlide[i]} slideDir=${slideDirArr[i]} " +
+                        "zoom=${isZoom[i]} zoomMode=${zoomModeArr[i]}"
+                )
             }
 
             val ops = mutableListOf<Op>()
@@ -128,8 +238,22 @@ object CrossfadeRenderPlan {
                 val e = entries[i]
                 val clipStart = e.trimStartMs
                 val clipEnd = e.trimEndMs
-                val bodyStart = clipStart + headConsumed[i]
-                val bodyEnd = clipEnd - tailConsumed[i]
+                // AUDIO FIX: for Crossfade/Slide/Zoom, B has no audio during the
+                // transition (B is bitmap-only overlay). Start B's plain body from
+                // trimStart so its audio is NOT cut at the front.
+                // For DipToColor, B was already a real MediaItem for its head window,
+                // so we skip that window to avoid replaying audio. (unchanged)
+                val incomingBoundary = i - 1
+                val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
+                val bodyStart = if (hasDipIncoming) clipStart + headConsumed[i] else clipStart
+                // TAIL FIX: bodyEnd must always be clipEnd (trimEndMs).
+                // tailConsumed[i] is the portion of A's tail used by the *outgoing*
+                // transition op (Crossfade/Slide/Zoom/Dip). That op is emitted as a
+                // separate item AFTER the plain body, so the plain body must run all
+                // the way to clipEnd — not stop early by tailConsumed ms.
+                // Stopping early was cutting off the last tailConsumed ms of every
+                // clip that had an outgoing transition.
+                val bodyEnd = clipEnd
 
                 // Emit the plain body of this clip (the part not consumed by crossfades).
                 if (bodyEnd > bodyStart) {
@@ -142,33 +266,73 @@ object CrossfadeRenderPlan {
                 if (i < entries.size - 1 && isCrossfade[i]) {
                     val cfMs = crossfadeMsArr[i]
                     val next = entries[i + 1]
-                    ops.add(
-                        Op.Crossfade(
-                            pathA = e.path,
-                            aTailStartMs = clipEnd - cfMs,
-                            aEndMs = clipEnd,
-                            pathB = next.path,
-                            bHeadStartMs = next.trimStartMs,
-                            crossfadeMs = cfMs
+                    if (cfMs > 0L) {
+                        ops.add(
+                            Op.Crossfade(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - cfMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                crossfadeMs = cfMs
+                            )
                         )
-                    )
+                    }
                 }
                 // Dip-through-color: emit A-tail (fade to color) + B-head (fade from color), each half.
                 if (i < entries.size - 1 && isDip[i]) {
                     val half = dipDurMsArr[i] / 2
                     val next = entries[i + 1]
-                    ops.add(
-                        Op.DipToColor(
-                            pathA = e.path,
-                            aTailStartMs = clipEnd - half,
-                            aEndMs = clipEnd,
-                            pathB = next.path,
-                            bHeadStartMs = next.trimStartMs,
-                            bHeadEndMs = next.trimStartMs + half,
-                            halfDurationMs = half,
-                            colorInt = dipColorArr[i]
+                    if (half > 0L) {
+                        ops.add(
+                            Op.DipToColor(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - half,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                bHeadEndMs = next.trimStartMs + half,
+                                halfDurationMs = half,
+                                colorInt = dipColorArr[i]
+                            )
                         )
-                    )
+                    }
+                }
+                // Slide: clip B slides in over A's tail (overlap-style, like dissolve).
+                if (i < entries.size - 1 && isSlide[i]) {
+                    val sMs = slideDurArr[i]
+                    val next = entries[i + 1]
+                    if (sMs > 0L) {
+                        ops.add(
+                            Op.Slide(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - sMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = sMs,
+                                direction = slideDirArr[i] ?: "SLIDE_LEFT"
+                            )
+                        )
+                    }
+                }
+                // Zoom: clip B scales into place over A's tail (overlap-style, like slide).
+                if (i < entries.size - 1 && isZoom[i]) {
+                    val zMs = zoomDurArr[i]
+                    val next = entries[i + 1]
+                    if (zMs > 0L) {
+                        ops.add(
+                            Op.Zoom(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - zMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = zMs,
+                                mode = zoomModeArr[i] ?: "ZOOM_IN"
+                            )
+                        )
+                    }
                 }
             }
 
@@ -178,6 +342,8 @@ object CrossfadeRenderPlan {
                     is Op.PlainClip -> Log.d(TAG, "[$idx] PLAIN ${op.path.substringAfterLast('/')} [${op.startMs}..${op.endMs}]")
                     is Op.Crossfade -> Log.d(TAG, "[$idx] XFADE ${op.crossfadeMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.DipToColor -> Log.d(TAG, "[$idx] DIP color=${op.colorInt} half=${op.halfDurationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[${op.bHeadStartMs}..${op.bHeadEndMs}]")
+                    is Op.Slide -> Log.d(TAG, "[$idx] SLIDE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.Zoom -> Log.d(TAG, "[$idx] ZOOM mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                 }
             }
             ops

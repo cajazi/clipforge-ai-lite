@@ -6,6 +6,7 @@ import com.clipforge.ai.core.ads.GoogleAdManager
 import com.clipforge.ai.core.auth.AuthManager
 import com.clipforge.ai.core.billing.BillingManager
 import com.clipforge.ai.core.billing.EntitlementManager
+import com.clipforge.ai.core.export.ExportManager
 import com.clipforge.ai.core.network.NetworkMonitor
 import com.clipforge.ai.core.storage.UserPreferencesManager
 import com.clipforge.ai.core.supabase.SupabaseClient
@@ -30,6 +31,7 @@ class ClipForgeApp : Application() {
     val renderRepository     by lazy { SupabaseRenderRepository(supabaseRenderApi) }
     val mediaRepository      by lazy { MediaRepositoryImpl(database.mediaAssetDao(), mediaApi) }
     val userPreferencesManager by lazy { UserPreferencesManager(this) }
+    val exportManager        by lazy { ExportManager(this, userPreferencesManager) }
     val networkMonitor       by lazy { NetworkMonitor(this) }
     val entitlementManager   by lazy { EntitlementManager() }
     val billingManager       by lazy { BillingManager(entitlementManager) }

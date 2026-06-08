@@ -2,6 +2,7 @@ package com.clipforge.ai.core.gl
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -47,10 +48,13 @@ object ProjectExporter {
 
     suspend fun resolveFirstVideoPath(context: Context, projectId: String): String? =
         withContext(Dispatchers.IO) {
+            Log.d(TAG, "resolveFirstVideoPath START project=$projectId device=${Build.MANUFACTURER}/${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
             val db = ClipForgeDatabase.getInstance(context)
             val items = db.timelineDao().getTimelineForProjectOnce(projectId)
+            Log.d(TAG, "resolveFirstVideoPath timelineItems=${items.size}")
             for (item in items) {
                 val asset = db.timelineDao().getMediaAssetForItem(item.mediaAssetId) ?: continue
+                Log.d(TAG, "resolveFirstVideoPath item=${item.id} asset=${asset.id} type=${asset.mediaType} uri=${asset.localUri} duration=${asset.durationMs}")
                 if (asset.mediaType == "VIDEO") {
                     Log.d(TAG, "first video asset=${asset.id} localUri=${asset.localUri}")
                     return@withContext asset.localUri
@@ -71,11 +75,19 @@ object ProjectExporter {
      */
     suspend fun resolveAllVideoPaths(context: Context, projectId: String): List<String> =
         withContext(Dispatchers.IO) {
+            Log.d(TAG, "resolveAllVideoPaths START project=$projectId device=${Build.MANUFACTURER}/${Build.MODEL} sdk=${Build.VERSION.SDK_INT} thread=${Thread.currentThread().name}")
             val db = ClipForgeDatabase.getInstance(context)
             val items = db.timelineDao().getTimelineForProjectOnce(projectId)
+            Log.d(TAG, "resolveAllVideoPaths timelineItems=${items.size}")
             val paths = mutableListOf<String>()
             for (item in items) {
                 val asset = db.timelineDao().getMediaAssetForItem(item.mediaAssetId) ?: continue
+                Log.d(
+                    TAG,
+                    "resolveAllVideoPaths item=${item.id} order=${item.orderIndex} track=${item.trackIndex} " +
+                        "asset=${asset.id} type=${asset.mediaType} uri=${asset.localUri} duration=${asset.durationMs} " +
+                        "trim=[${item.trimStartMs}..${item.trimEndMs}] transition=${item.transitionType} transitionMs=${item.transitionDurationMs}"
+                )
                 if (asset.mediaType == "VIDEO") {
                     paths.add(asset.localUri)
                 }
@@ -99,42 +111,56 @@ object ProjectExporter {
         onResult: (Result) -> Unit
     ) {
         if (paths.isEmpty()) {
+            Log.e(TAG, "exportProject ERROR empty paths")
             onResult(Result.Error("No video clips to export"))
             return
         }
 
         val outputFile = File(context.getExternalFilesDir(null), "export_${System.currentTimeMillis()}.mp4")
         if (outputFile.exists()) outputFile.delete()
+        Log.d(TAG, "exportProject START paths=$paths output=${outputFile.absolutePath} parentWritable=${outputFile.parentFile?.canWrite()}")
 
         val editedItems = paths.map { path ->
+            Log.d(TAG, "exportProject mediaItem BEFORE path=$path")
             val mediaItem = MediaItem.Builder().setUri(pathToUri(path)).build()
-            EditedMediaItem.Builder(mediaItem).build()
+            val item = EditedMediaItem.Builder(mediaItem).build()
+            Log.d(TAG, "exportProject mediaItem AFTER path=$path item=$item")
+            item
         }
         Log.d(TAG, "START clips=${editedItems.size} output=${outputFile.absolutePath}")
 
+        Log.d(TAG, "exportProject sequence BEFORE")
         val sequence = EditedMediaItemSequence.Builder(editedItems).build()
+        Log.d(TAG, "exportProject sequence AFTER")
+        Log.d(TAG, "exportProject composition BEFORE")
         val composition = Composition.Builder(listOf(sequence)).build()
+        Log.d(TAG, "exportProject composition AFTER composition=$composition")
 
         val mainHandler = Handler(Looper.getMainLooper())
 
+        Log.d(TAG, "exportProject transformer BEFORE")
         val transformer = Transformer.Builder(context)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
+                    Log.d(TAG, "TRANSFORMER_CALLBACK_ON_COMPLETED result=$result outputExists=${outputFile.exists()} bytes=${outputFile.length()}")
                     onProgress(100)
                     Log.d(TAG, "DONE bytes=${outputFile.length()} durationMs=${result.durationMs}")
                     onResult(Result.Done(outputFile.absolutePath, outputFile.length()))
                 }
                 override fun onError(composition: Composition, result: ExportResult, exception: ExportException) {
-                    Log.e(TAG, "ERROR code=${exception.errorCode} msg=${exception.message}", exception)
+                    Log.e(TAG, "TRANSFORMER_CALLBACK_ON_ERROR result=$result code=${exception.errorCode} msg=${exception.message}", exception)
                     onResult(Result.Error("code=${exception.errorCode} ${exception.message}"))
                 }
             })
             .build()
+        Log.d(TAG, "exportProject transformer AFTER transformer=$transformer")
 
         try {
+            Log.d(TAG, "exportProject transformer.start BEFORE output=${outputFile.absolutePath}")
             transformer.start(composition, outputFile.absolutePath)
+            Log.d(TAG, "exportProject transformer.start AFTER")
         } catch (t: Throwable) {
-            Log.e(TAG, "THROW ${t.message}", t)
+            Log.e(TAG, "exportProject transformer.start THROW ${t.message}", t)
             onResult(Result.Error("THROW ${t.message}"))
             return
         }

@@ -1,4 +1,4 @@
-package com.clipforge.ai.presentation.timeline
+﻿package com.clipforge.ai.presentation.timeline
 
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -89,15 +90,14 @@ import kotlin.math.roundToLong
 import kotlin.math.abs
 
 private val CLIP_W: Dp           = 80.dp
-private val SLOT_W: Dp           = 36.dp
 private val TRACK_H: Dp          = 80.dp
 private val PX_PER_SEC: Float    = 40f   // 40 px per second of clip
 private const val SCREEN_TAG = "TimelineScreen"
-private val TRACK_CONTROLS_W: Dp = 112.dp
-private val STICKY_ADD_MEDIA_PADDING: Dp = 66.dp
-private const val PREVIEW_SEEK_SKIP_MS = 100L
-private const val PREVIEW_TRIM_SEEK_THROTTLE_MS = 100L
-private const val PREVIEW_SCRUB_DEBOUNCE_MS = 90L
+private val TRACK_CONTROLS_W: Dp = 40.dp
+private val STICKY_ADD_MEDIA_PADDING: Dp = 48.dp
+private const val PREVIEW_SEEK_SKIP_MS = 16L
+private const val PREVIEW_TRIM_SEEK_THROTTLE_MS = 16L
+private const val PREVIEW_SCRUB_DEBOUNCE_MS = 0L
 private const val PREVIEW_LOADING_DELAY_MS = 500L
 private const val PREVIEW_PLAYER_SYNC_MS = 33L
 private const val MIN_TIMELINE_ZOOM = 0.55f
@@ -246,10 +246,32 @@ fun TimelineScreen(
     Scaffold(
         topBar = { CapCutEditorTopBar(onBack = onBack, onExport = onExport) },
         bottomBar = {
+            val splitCandidateClip = uiState.selectedClipId?.let { selectedId ->
+                uiState.clips.firstOrNull { it.id == selectedId }
+            } ?: uiState.currentSegment?.clipId?.let { activeId ->
+                uiState.clips.firstOrNull { it.id == activeId }
+            } ?: uiState.clips.firstOrNull { clip ->
+                uiState.globalProjectTimeMs >= clip.timelineStartMs &&
+                    uiState.globalProjectTimeMs <= clip.timelineEndMs
+            }
+            val playheadInsideClip = splitCandidateClip?.let { clip ->
+                uiState.globalProjectTimeMs > clip.timelineStartMs &&
+                    uiState.globalProjectTimeMs < clip.timelineEndMs
+            } == true
+            val splitButtonEnabled = splitCandidateClip != null
+            LaunchedEffect(splitButtonEnabled, splitCandidateClip?.id, uiState.selectedClipId, uiState.globalProjectTimeMs) {
+                Log.d(
+                    SCREEN_TAG,
+                    "SPLIT_BUTTON_ENABLED_STATE enabled=$splitButtonEnabled candidateClipId=${splitCandidateClip?.id} selectedClipId=${uiState.selectedClipId} " +
+                        "playheadMs=${uiState.globalProjectTimeMs} playheadInsideClip=$playheadInsideClip " +
+                        "blockingModal=${showSpeedSheet || showVolumeSheet || showTransformSheet || showTextSheet || comingSoonTool != null || placeholderTool != null}"
+                )
+            }
             TimelineToolbar(
                 toolbarMode = uiState.toolbarMode,
                 canUndo = uiState.canUndo,
                 canRedo = uiState.canRedo,
+                splitButtonEnabled = splitButtonEnabled,
                 onPrimaryTool = { label ->
                     when (label) {
                         "Edit" -> viewModel.onPrimaryToolClicked(label)
@@ -260,9 +282,18 @@ fun TimelineScreen(
                     }
                 },
                 onEditTool = { action ->
+                    Log.d(SCREEN_TAG, "BOTTOM_TOOLBAR_CLICK_RECEIVED action=${action.label}")
                     if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
                         Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
                     } else {
+                        if (action == EditToolAction.Split) {
+                            Log.d(
+                                SCREEN_TAG,
+                                "SPLIT_BUTTON_TAP candidateClipId=${splitCandidateClip?.id} selectedClipId=${uiState.selectedClipId} currentSegment=${uiState.currentSegment?.clipId} " +
+                                    "playheadMs=${uiState.globalProjectTimeMs}"
+                            )
+                            Log.d(SCREEN_TAG, "SPLIT_ACTION_DISPATCHED source=bottomToolbar handler=existingViewModel")
+                        }
                         viewModel.onEditToolClicked(action)
                     }
                 }
@@ -279,11 +310,13 @@ fun TimelineScreen(
             Column(Modifier.fillMaxSize()) {
                 CapCutPreviewArea(
                     clips = uiState.clips,
-                    clip = uiState.clips.firstOrNull { it.id == uiState.currentSegment?.clipId },
+                    clip = uiState.clips.firstOrNull { it.id == uiState.currentSegment?.clipId }
+                        ?: uiState.selectedClipId?.let { selectedId -> uiState.clips.firstOrNull { it.id == selectedId } }
+                        ?: uiState.clips.firstOrNull(),
                     segment = uiState.currentSegment,
                     isPlaying = uiState.isPlaying,
                     globalTime = uiState.globalProjectTimeMs,
-                    isTrimDragging = uiState.trimmingClipId != null || uiState.interactionMode == EditorInteractionMode.SPLIT_ADJUST,
+                    isTrimDragging = uiState.trimmingClipId != null || uiState.interactionMode == EditorInteractionMode.BOUNDARY_TRIM,
                     trimPreviewFrameMs = uiState.trimPreviewFrameMs,
                     onPlayerPosition = viewModel::syncPlaybackFromPlayer,
                     resumeAfterPlaylistPrepared = uiState.resumePlaybackAfterPlaylistPrepared,
@@ -313,6 +346,7 @@ fun TimelineScreen(
                     trimGestureActive = uiState.trimGestureActive,
                     trimSessionSide = uiState.trimSessionSide,
                     trimSessionStartMs = uiState.trimSessionStartMs,
+                    preserveTimelineScrollVersion = uiState.preserveTimelineScrollVersion,
                     scrollState = timelineScrollState,
                     zoom = timelineZoom,
                     onZoomChange = { timelineZoom = it.coerceIn(MIN_TIMELINE_ZOOM, MAX_TIMELINE_ZOOM) },
@@ -337,9 +371,11 @@ fun TimelineScreen(
                     onTrimStartDragged = viewModel::onTrimStartDragged,
                     onTrimEndDragged = viewModel::onTrimEndDragged,
                     onTrimFinished = viewModel::onTrimFinished,
-                    onSplitBoundaryDragged = viewModel::updateSplitBoundaryPreview,
-                    onSplitBoundaryFinished = viewModel::onSplitBoundaryDragFinished,
-                    onSplitAdjustDone = viewModel::commitSplitBoundary,
+                    onSplitBoundarySelected = viewModel::enterSplitAdjustMode,
+                    onSplitBoundaryTrimStarted = viewModel::startSharedBoundaryTrim,
+                    onSplitBoundaryDragged = viewModel::updateSharedBoundaryTrim,
+                    onSplitBoundaryFinished = viewModel::commitSharedBoundaryTrim,
+                    onSplitAdjustDone = { viewModel.commitSplitBoundary() },
                     onOpenTransition = viewModel::openTransitionPicker,
                     onAddMedia = launchAppendMediaPicker
                 )
@@ -425,7 +461,7 @@ private fun CapCutEditorTopBar(onBack: () -> Unit, onExport: () -> Unit) {
                 color = Color(0xFF303033)
             ) {
                 Text(
-                    "AI UHD ▾",
+                    "AI UHD",
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -690,9 +726,29 @@ private fun CapCutPreviewArea(
         it.thumbnailUri != null &&
             (it.mediaType == MediaType.VIDEO || it.mediaType == MediaType.OVERLAY_VIDEO)
     }
+    LaunchedEffect(clips.size, previewClip?.id, globalTime) {
+        Log.d(
+            SCREEN_TAG,
+            "PREVIEW_TIMELINE_BOUND clips=${clips.size} previewClipId=${previewClip?.id} currentTimelineMs=$globalTime " +
+                "placeholderVisible=${clips.isEmpty()}"
+        )
+    }
     val transitionProgress = activeTransition?.progress?.coerceIn(0f, 1f)
     val transitionType = activeTransition?.transitionType
     val density = LocalDensity.current
+    var previewControlsVisible by remember { mutableStateOf(true) }
+    var previewZoom by remember { mutableFloatStateOf(1f) }
+    var previewPanX by remember { mutableFloatStateOf(0f) }
+    var previewPanY by remember { mutableFloatStateOf(0f) }
+    val latestPreviewTimeMs by rememberUpdatedState(globalTime)
+    val previewTransformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextZoom = (previewZoom * zoomChange).coerceIn(1f, 4f)
+        previewZoom = nextZoom
+        previewPanX = if (nextZoom == 1f) 0f else (previewPanX + panChange.x).coerceIn(-360f, 360f)
+        previewPanY = if (nextZoom == 1f) 0f else (previewPanY + panChange.y).coerceIn(-640f, 640f)
+        previewControlsVisible = true
+        Log.v(SCREEN_TAG, "PREVIEW_GESTURE_ZOOM scale=$previewZoom panX=$previewPanX panY=$previewPanY")
+    }
     val isTransitionActive = transitionProgress != null && transitionType != null && transitionType != TransitionType.NONE
     val incomingClip = activeTransition?.toClipId?.let { toClipId -> clips.firstOrNull { it.id == toClipId } }
     val incomingTransitionFrameMs = if (isTransitionActive && incomingClip != null) {
@@ -732,10 +788,25 @@ private fun CapCutPreviewArea(
             }
         }
     }
+    LaunchedEffect(previewClip?.id) {
+        Log.d(
+            SCREEN_TAG,
+            "PREVIEW_GESTURE_HIT_AREA scopedToPreview=true widthDp=210 aspectRatio=9:16 " +
+                "bottomToolbarIntercept=false previewClipId=${previewClip?.id}"
+        )
+    }
+    LaunchedEffect(isPlaying, previewControlsVisible) {
+        if (isPlaying && previewControlsVisible) {
+            delay(1800L)
+            previewControlsVisible = false
+            Log.d(SCREEN_TAG, "PREVIEW_CONTROLS_AUTO_HIDE visible=false currentTimelineMs=$latestPreviewTimeMs")
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(372.dp)
+            .height(304.dp)
+            .zIndex(0f)
             .background(Color(0xFF151515)),
         contentAlignment = Alignment.Center
     ) {
@@ -746,12 +817,29 @@ private fun CapCutPreviewArea(
                 .clip(RoundedCornerShape(2.dp))
                 .graphicsLayer {
                     val transform = previewClip?.transform ?: ClipTransform()
-                    scaleX = transform.scale
-                    scaleY = transform.scale
-                    translationX = transform.offsetX
-                    translationY = transform.offsetY
+                    val combinedScale = transform.scale * previewZoom
+                    scaleX = combinedScale
+                    scaleY = combinedScale
+                    translationX = transform.offsetX + previewPanX
+                    translationY = transform.offsetY + previewPanY
                     rotationZ = transform.rotation
                     alpha = previewClip?.opacity ?: 1f
+                }
+                .transformable(previewTransformState)
+                .pointerInput(previewClip?.id, isPlaying, previewControlsVisible) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            previewZoom = 1f
+                            previewPanX = 0f
+                            previewPanY = 0f
+                            previewControlsVisible = true
+                            Log.d(SCREEN_TAG, "PREVIEW_DOUBLE_TAP_FIT scale=$previewZoom panX=$previewPanX panY=$previewPanY")
+                        },
+                        onTap = {
+                            previewControlsVisible = !previewControlsVisible
+                            Log.d(SCREEN_TAG, "PREVIEW_CONTROLS_TOGGLE visible=$previewControlsVisible currentTimelineMs=$globalTime")
+                        }
+                    )
                 }
                 .background(Color.Black),
             contentAlignment = Alignment.Center
@@ -804,13 +892,16 @@ private fun CapCutPreviewArea(
                             modifier = Modifier.fillMaxSize()
                         )
                     }
-                    clip?.thumbnailUri != null -> {
+                    previewClip?.thumbnailUri != null -> {
                         AsyncImage(
-                            model = clip.thumbnailUri,
+                            model = previewClip.thumbnailUri,
                             contentDescription = "Preview",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
+                    }
+                    clips.isNotEmpty() -> {
+                        Text("Preview", color = AppColors.TextSecondary, fontSize = 13.sp)
                     }
                     else -> {
                         Text("Preview", color = AppColors.TextSecondary, fontSize = 13.sp)
@@ -865,16 +956,20 @@ private fun CapCutPreviewArea(
                 }
             }
         }
-        if (!isPlaying) {
+        if (previewControlsVisible) {
             Box(
                 modifier = Modifier
                     .size(58.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.20f))
-                    .clickable(onClick = onTogglePlay),
+                    .clickable {
+                        previewControlsVisible = true
+                        onTogglePlay()
+                        Log.d(SCREEN_TAG, "PREVIEW_PLAYBACK_TOGGLE requestedPlay=${!isPlaying} currentTimelineMs=$globalTime")
+                    },
                 contentAlignment = Alignment.Center
             ) {
-                Text("▷", color = Color.White, fontSize = 30.sp)
+                Text(if (isPlaying) "Pause" else "Play", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1507,6 +1602,11 @@ private fun VideoPreviewPlayer(
                 "duringActivePlayback=${player.isPlaying || isPlaying} currentMediaItemIndex=${player.currentMediaItemIndex} " +
                 "currentMediaItem=${player.currentMediaItem?.mediaId}"
         )
+        Log.d(
+            SCREEN_TAG,
+            "PREVIEW_PLAYHEAD_SYNC reason=$reason activeClipId=${clip.id} windowIndex=$windowIndex " +
+                "targetMs=$targetMs currentTimelineMs=$globalTime"
+        )
         player.seekTo(windowIndex, targetMs)
     }
 
@@ -1575,7 +1675,18 @@ private fun VideoPreviewPlayer(
             "setMediaItems called duringActivePlayback=$wasActivelyPlaying timelineChangeReason=playlistSignatureChanged " +
                 "playlistSize=${mediaItems.size} startIndex=$startIndex currentMediaItem=${player.currentMediaItem?.mediaId}"
         )
+        Log.d(
+            SCREEN_TAG,
+            "PREVIEW_SOURCE_SET activeClipId=${clip.id} firstClipId=${playbackItems.firstOrNull()?.clips?.firstOrNull()?.id} " +
+                "playlistSize=${mediaItems.size} startIndex=$startIndex startOffsetMs=$startOffsetMs " +
+                "sourceUri=${playbackItems.getOrNull(startIndex)?.uri}"
+        )
         player.setMediaItems(mediaItems, startIndex, startOffsetMs)
+        Log.d(
+            SCREEN_TAG,
+            "PREVIEW_PLAYHEAD_SYNC reason=sourceSet activeClipId=${clip.id} windowIndex=$startIndex " +
+                "targetMs=$startOffsetMs currentTimelineMs=$globalTime"
+        )
         prepareStartedAtMs = startMs
         isPreparing = true
         Log.d(
@@ -1762,8 +1873,12 @@ private fun VideoPreviewPlayer(
 
     LaunchedEffect(localPositionMs, isPlaying, isTrimDragging, preparedPlaylistSignature) {
         if (!isPlaying && !isTrimDragging && preparedPlaylistSignature == playlistSignature) {
-            delay(PREVIEW_SCRUB_DEBOUNCE_MS)
+            if (PREVIEW_SCRUB_DEBOUNCE_MS > 0L) delay(PREVIEW_SCRUB_DEBOUNCE_MS)
             if (!player.isPlaying) {
+                Log.d(
+                    SCREEN_TAG,
+                    "PREVIEW_SCRUB_FRAME_SYNC activeClipId=${clip.id} localPositionMs=$localPositionMs currentTimelineMs=$globalTime"
+                )
                 requestSeek(activeWindowIndex(), activeWindowOffsetMs(), "pausedScrub")
             }
         }
@@ -1828,23 +1943,24 @@ private fun CapCutTransportBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(40.dp)
             .background(Color(0xFF151515))
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text("⛶", color = Color.White, fontSize = 22.sp)
+        Text("[ ]", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         Text(
-            if (isPlaying) "▯▯" else "▷",
+            if (isPlaying) "Pause" else "Play",
             color = Color.White,
-            fontSize = 30.sp,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable(onClick = onTogglePlay)
         )
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("▣\nON", color = Color.White, fontSize = 10.sp, lineHeight = 10.sp, textAlign = TextAlign.Center)
-            Text("↶", color = AppColors.TextSecondary, fontSize = 28.sp)
-            Text("↷", color = AppColors.TextSecondary, fontSize = 28.sp)
+            Text("Snap\nON", color = Color.White, fontSize = 10.sp, lineHeight = 10.sp, textAlign = TextAlign.Center)
+            Text("Undo", color = AppColors.TextSecondary, fontSize = 11.sp)
+            Text("Redo", color = AppColors.TextSecondary, fontSize = 11.sp)
         }
     }
 }
@@ -1864,6 +1980,7 @@ private fun CapCutTimelineEditor(
     trimGestureActive: Boolean,
     trimSessionSide: TrimSide?,
     trimSessionStartMs: Long?,
+    preserveTimelineScrollVersion: Long,
     scrollState: androidx.compose.foundation.ScrollState,
     frameCache: MutableMap<String, List<Bitmap?>>,
     onSeekTo: (Long) -> Unit,
@@ -1886,6 +2003,8 @@ private fun CapCutTimelineEditor(
     onTrimStartDragged: (String, Long) -> Unit,
     onTrimEndDragged: (String, Long) -> Unit,
     onTrimFinished: (String) -> Unit,
+    onSplitBoundarySelected: (String, String) -> Unit,
+    onSplitBoundaryTrimStarted: () -> Unit,
     onSplitBoundaryDragged: (Long) -> Unit,
     onSplitBoundaryFinished: () -> Unit,
     onSplitAdjustDone: () -> Unit,
@@ -1911,11 +2030,23 @@ private fun CapCutTimelineEditor(
     var dragStartedWhilePlaying by remember { mutableStateOf(false) }
     var insertionIndex by remember { mutableIntStateOf(-1) }
     var suppressTimelineDragEnd by remember { mutableStateOf(false) }
+    var lastPreserveTimelineScrollVersion by remember { mutableLongStateOf(preserveTimelineScrollVersion) }
     var timelineRecompositionCount by remember { mutableIntStateOf(0) }
     val isTrimMode = interactionMode == EditorInteractionMode.TRIM
     val isActivelyTrimming = isTrimMode && trimGestureActive
     val timeFromScroll by remember(scrollState.value, pxPerMs, totalMs) {
         derivedStateOf { (scrollState.value / pxPerMs).roundToInt().toLong().coerceIn(0L, totalMs) }
+    }
+
+    LaunchedEffect(Unit) {
+        Log.d(
+            SCREEN_TAG,
+            "TIMELINE_UI_AUDIT trackControlsW=${TRACK_CONTROLS_W.value} clipRowH=44 addButton=24 trimHandleVisual=2 " +
+                "selectedOutline=1 transitionMarker=8 continuousStrip=true boxedAppearance=false"
+        )
+        Log.d(SCREEN_TAG, "TIMELINE_DENSITY_CHECK clipHeight=44 rowHeight=44 tileWidth=20 rulerHeight=28")
+        Log.d(SCREEN_TAG, "TIMELINE_SELECTION_CHECK outlineDp=1 handleOverlay=true layoutShift=false alpha=0.36")
+        Log.d(SCREEN_TAG, "TIMELINE_CONTROL_SIZE_CHECK plusButtonDp=24 sideShortcutDp=18 trimHandleDp=2 boundaryHandleDp=1")
     }
 
     SideEffect {
@@ -2004,7 +2135,16 @@ private fun CapCutTimelineEditor(
             }
     }
 
-    LaunchedEffect(clips) {
+    LaunchedEffect(clips, preserveTimelineScrollVersion) {
+        if (preserveTimelineScrollVersion != lastPreserveTimelineScrollVersion) {
+            lastPreserveTimelineScrollVersion = preserveTimelineScrollVersion
+            Log.d(
+                SCREEN_TAG,
+                "TIMELINE_SYNC autoScroll=false preserveTimelineScrollVersion=$preserveTimelineScrollVersion " +
+                    "currentTimelineMs=$globalTime scrollOffset=${scrollState.value}"
+            )
+            return@LaunchedEffect
+        }
         if (!isActivelyTrimming && scrollState.value == 0 && globalTime > 0) {
             scrollState.scrollTo((globalTime * pxPerMs).roundToInt().coerceAtLeast(0))
         }
@@ -2013,7 +2153,7 @@ private fun CapCutTimelineEditor(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(252.dp)
+            .height(256.dp)
             .background(Color(0xFF1D1D1D))
     ) {
         val playheadTrackLead = remember(maxWidth) {
@@ -2038,17 +2178,12 @@ private fun CapCutTimelineEditor(
                         .weight(1f)
                         .padding(top = 8.dp)
                 ) {
-                    if (interactionMode == EditorInteractionMode.SPLIT_ADJUST) {
-                        SplitAdjustModePill(
-                            boundaryMs = previewSplitBoundaryMs,
-                            onDone = onSplitAdjustDone
-                        )
-                    }
+                    // SPLIT_ADJUST pill removed — split is instant like CapCut.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(62.dp)
-                            .padding(end = 14.dp)
+                                .height(44.dp)
+                            .padding(end = 8.dp)
                             .transformable(zoomState)
                             .background(Color(0xFF242424))
                     ) {
@@ -2095,17 +2230,56 @@ private fun CapCutTimelineEditor(
                             } else {
                                 displayClips.forEachIndexed { index, clip ->
                                     key(clip.id) {
+                                        val nextClip = displayClips.getOrNull(index + 1)
+                                        val hasTransition = clip.transition != null && clip.transition.type != TransitionType.NONE
+                                        val isSplitBoundary = nextClip != null &&
+                                            clip.mediaAssetId == nextClip.mediaAssetId &&
+                                            clip.sourceEndMs <= nextClip.sourceEndMs &&
+                                            nextClip.sourceStartMs >= clip.sourceStartMs
+                                        val boundarySelected = interactionMode == EditorInteractionMode.BOUNDARY_TRIM &&
+                                            splitAdjustClipAId == clip.id &&
+                                            splitAdjustClipBId == nextClip?.id
+                                        val startPx = (clip.timelineStartMs * pxPerMs).roundToInt()
+                                        val endPx = (clip.timelineEndMs * pxPerMs).roundToInt()
+                                        val widthPx = (endPx - startPx).coerceAtLeast(1)
+                                        val pixelWidthDp = with(density) { widthPx.toDp() }
+                                        if (nextClip != null) {
+                                            val nextStartPx = (nextClip.timelineStartMs * pxPerMs).roundToInt()
+                                            Log.v(
+                                                SCREEN_TAG,
+                                                "TIMELINE_PIXEL_GAP_CHECK leftClipId=${clip.id} rightClipId=${nextClip.id} " +
+                                                    "leftEndPx=$endPx rightStartPx=$nextStartPx gapPx=${nextStartPx - endPx}"
+                                            )
+                                            Log.d(
+                                                SCREEN_TAG,
+                                                "TIMELINE_GAP_CHECK leftClipId=${clip.id} rightClipId=${nextClip.id} gapPx=${nextStartPx - endPx}"
+                                            )
+                                            if (nextStartPx != endPx) {
+                                                Log.w(
+                                                    SCREEN_TAG,
+                                                    "TIMELINE_GAP_DETECTED leftClipId=${clip.id} rightClipId=${nextClip.id} " +
+                                                        "leftEndPx=$endPx rightStartPx=$nextStartPx gapPx=${nextStartPx - endPx}"
+                                                )
+                                            }
+                                        }
                                         if (draggingClipId != null && insertionIndex == index && draggingClipId != clip.id) {
                                             CapCutInsertionIndicator()
                                         }
                                         CapCutThumbnailClip(
                                             clip = clip,
+                                            width = pixelWidthDp,
                                             selected = clip.id == selectedClipId,
                                             active = clip.id == currentSegment?.clipId,
                                             dragged = clip.id == draggingClipId,
                                             dragOffsetPx = if (clip.id == draggingClipId) draggingOffsetPx else 0f,
-                                            splitAffected = interactionMode == EditorInteractionMode.SPLIT_ADJUST &&
+                                            splitAffected = interactionMode == EditorInteractionMode.BOUNDARY_TRIM &&
                                                 (clip.id == splitAdjustClipAId || clip.id == splitAdjustClipBId),
+                                            showTransitionMarker = nextClip != null && (hasTransition || clip.id == selectedClipId || isSplitBoundary),
+                                            hasTransition = hasTransition,
+                                            transitionIcon = clip.transition?.type?.let(::capCutTransitionIcon),
+                                            isSplitBoundaryMarker = isSplitBoundary,
+                                            boundarySelected = boundarySelected,
+                                            // AUTO-TRIM: show trim handles whenever a clip is selected, like CapCut.
                                             trimMode = interactionMode == EditorInteractionMode.TRIM && clip.id == selectedClipId,
                                             trimSessionSide = trimSessionSide,
                                             trimSessionStartMs = trimSessionStartMs,
@@ -2148,30 +2322,29 @@ private fun CapCutTimelineEditor(
                                             onTrimFinished = onTrimFinished,
                                             onTrimStarted = onTrimStarted,
                                             onTrimPreviewUpdated = onTrimPreviewUpdated,
-                                            onTrimCommitted = onTrimCommitted
-                                        )
-                                        val nextClip = displayClips.getOrNull(index + 1)
-                                        if (interactionMode == EditorInteractionMode.SPLIT_ADJUST &&
-                                            clip.id == splitAdjustClipAId &&
-                                            nextClip?.id == splitAdjustClipBId
-                                        ) {
-                                            Log.d(SCREEN_TAG, "rendering split handle left=$splitAdjustClipAId right=$splitAdjustClipBId")
-                                            CapCutSplitBoundaryHandle(
-                                                pxPerMs = pxPerMs,
-                                                onDragged = onSplitBoundaryDragged,
-                                                onFinished = onSplitBoundaryFinished
-                                            )
-                                        } else if (nextClip != null) {
-                                            TransitionSlot(
-                                                transition = clip.transition,
-                                                isActive = clip.id == selectedClipId,
-                                                onClick = {
-                                                    onSelectClip(clip.id)
+                                            onTrimCommitted = onTrimCommitted,
+                                            onTransitionClick = if (nextClip != null) {
+                                                {
                                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    onOpenTransition(clip.id)
+                                                    if (isSplitBoundary) {
+                                                        onSplitBoundarySelected(clip.id, nextClip.id)
+                                                    } else {
+                                                        onSelectClip(clip.id)
+                                                        onOpenTransition(clip.id)
+                                                    }
                                                 }
-                                            )
-                                        }
+                                            } else {
+                                                null
+                                            },
+                                            onBoundarySelected = if (nextClip != null && isSplitBoundary) {
+                                                { onSplitBoundarySelected(clip.id, nextClip.id) }
+                                            } else {
+                                                null
+                                            },
+                                            onBoundaryTrimStarted = onSplitBoundaryTrimStarted,
+                                            onBoundaryTrimDragged = onSplitBoundaryDragged,
+                                            onBoundaryTrimFinished = onSplitBoundaryFinished
+                                        )
                                         if (draggingClipId != null && insertionIndex == displayClips.size && index == displayClips.lastIndex) {
                                             CapCutInsertionIndicator()
                                         }
@@ -2184,7 +2357,7 @@ private fun CapCutTimelineEditor(
                             onClick = onAddMedia,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .padding(end = 8.dp)
+                        .padding(end = 4.dp)
                                 .zIndex(10f)
                         )
                     }
@@ -2205,7 +2378,7 @@ private fun CapCutTimelineEditor(
                 .align(Alignment.TopCenter)
                 .padding(top = 32.dp)
                 .width(2.dp)
-                .height(168.dp)
+                .height(214.dp)
                 .background(Color.White)
         )
     }
@@ -2227,7 +2400,7 @@ private fun CapCutTimeRuler(globalTime: Long, totalMs: Long) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold
         )
-        Text("00:00        ·        00:02        ·        00:04        ·", color = AppColors.TextSecondary, fontSize = 11.sp)
+        Text("00:00        |        00:02        |        00:04        |", color = AppColors.TextSecondary, fontSize = 11.sp)
     }
 }
 
@@ -2239,17 +2412,17 @@ private fun CapCutTrackControls(
 ) {
     Column(
         modifier = Modifier
-            .width(112.dp)
-            .padding(start = 20.dp, top = 10.dp),
+            .width(TRACK_CONTROLS_W)
+            .padding(start = 2.dp, top = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("▱", color = Color.White, fontSize = 22.sp)
-        Text("Mute\nclip", color = Color.White, fontSize = 10.sp, lineHeight = 10.sp, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
+        Text("M", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("Mute\nclip", color = Color.White, fontSize = 5.sp, lineHeight = 5.sp, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(2.dp))
         Box(
             modifier = Modifier
-                .size(width = 70.dp, height = 58.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(width = 30.dp, height = 26.dp)
+                .clip(RoundedCornerShape(3.dp))
                 .background(Color(0xFF3A332F)),
             contentAlignment = Alignment.Center
         ) {
@@ -2261,12 +2434,12 @@ private fun CapCutTrackControls(
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            Text("✎", color = Color.White, fontSize = 18.sp)
-            Text("Cover", color = Color.White, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp))
+            Text("E", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("Cover", color = Color.White, fontSize = 5.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 1.dp))
         }
-        Spacer(Modifier.height(12.dp))
-        SmallTrackShortcut("♪", onClick = onAddMusic)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(4.dp))
+        SmallTrackShortcut("+", onClick = onAddMusic)
+        Spacer(Modifier.height(4.dp))
         SmallTrackShortcut("T", onClick = onAddText)
     }
 }
@@ -2275,13 +2448,13 @@ private fun CapCutTrackControls(
 private fun SmallTrackShortcut(label: String, onClick: (() -> Unit)?) {
     Box(
         modifier = Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(18.dp)
+            .clip(RoundedCornerShape(3.dp))
             .background(Color(0xFF2B2B2B))
             .clickable(enabled = onClick != null) { onClick?.invoke() },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = AppColors.TextSecondary, fontSize = 22.sp)
+        Text(label, color = AppColors.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -2322,7 +2495,7 @@ private fun SplitAdjustModePill(
         Column(Modifier.weight(1f)) {
             Text("Split adjust mode", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text(
-                "Drag to adjust split${boundaryMs?.let { " · ${TimeFormatter.formatMs(it)}" } ?: ""}",
+                "Drag to adjust split${boundaryMs?.let { " - ${TimeFormatter.formatMs(it)}" } ?: ""}",
                 color = Color.White.copy(alpha = 0.68f),
                 fontSize = 9.sp,
                 maxLines = 1,
@@ -2347,11 +2520,17 @@ private fun SplitAdjustModePill(
 @Composable
 private fun CapCutThumbnailClip(
     clip: ClipUiModel,
+    width: Dp,
     selected: Boolean,
     active: Boolean,
     dragged: Boolean,
     dragOffsetPx: Float,
     splitAffected: Boolean,
+    showTransitionMarker: Boolean,
+    hasTransition: Boolean,
+    transitionIcon: String?,
+    isSplitBoundaryMarker: Boolean,
+    boundarySelected: Boolean,
     trimMode: Boolean,
     trimSessionSide: TrimSide?,
     trimSessionStartMs: Long?,
@@ -2368,10 +2547,14 @@ private fun CapCutThumbnailClip(
     onTrimFinished: (String) -> Unit,
     onTrimStarted: (String, TrimSide) -> Unit,
     onTrimPreviewUpdated: (String, TrimSide, Long) -> Unit,
-    onTrimCommitted: (String, TrimSide) -> Unit
+    onTrimCommitted: (String, TrimSide) -> Unit,
+    onTransitionClick: (() -> Unit)?,
+    onBoundarySelected: (() -> Unit)?,
+    onBoundaryTrimStarted: () -> Unit,
+    onBoundaryTrimDragged: (Long) -> Unit,
+    onBoundaryTrimFinished: () -> Unit
 ) {
-    val widthDp = clip.capCutTimelineWidth(zoom)
-    val leftTrimVisualOffsetPx = if (trimMode && trimSessionSide == TrimSide.LEFT && trimSessionStartMs != null) {
+    val leftTrimEdgeOffsetPx = if (trimMode && trimSessionSide == TrimSide.LEFT && trimSessionStartMs != null) {
         (clip.sourceStartMs - trimSessionStartMs).coerceAtLeast(0L) * pxPerMs
     } else {
         0f
@@ -2397,10 +2580,10 @@ private fun CapCutThumbnailClip(
     }
     Box(
         modifier = Modifier
-            .size(width = widthDp, height = 54.dp)
+            .size(width = width, height = 44.dp)
             .zIndex(if (dragged) 20f else 1f)
             .graphicsLayer {
-                translationX = dragOffsetPx + leftTrimVisualOffsetPx
+                translationX = dragOffsetPx + leftTrimEdgeOffsetPx
                 scaleX = if (dragged) 1.05f else 1f
                 scaleY = if (dragged) 1.05f else 1f
                 alpha = if (dragged) 0.9f else 1f
@@ -2408,15 +2591,16 @@ private fun CapCutThumbnailClip(
             }
             .shadow(if (dragged) 14.dp else 0.dp, RoundedCornerShape(4.dp))
             .border(
-                width = if (selected || splitAffected || trimMode) 2.dp else 0.dp,
+                width = if (selected || splitAffected || trimMode || boundarySelected) 1.dp else 0.dp,
                 color = when {
-                    trimMode -> Color.White
-                    selected -> Color.White
-                    splitAffected -> Color.White.copy(alpha = 0.82f)
-                    active -> Color.White.copy(alpha = 0.45f)
+                    boundarySelected -> Color.White.copy(alpha = 0.36f)
+                    trimMode -> Color.White.copy(alpha = 0.38f)
+                    selected -> Color.White.copy(alpha = 0.30f)
+                    splitAffected -> Color.White.copy(alpha = 0.22f)
+                    active -> Color.White.copy(alpha = 0.16f)
                     else -> Color.Transparent
                 },
-                shape = RoundedCornerShape(2.dp)
+                shape = RoundedCornerShape(0.dp)
             )
             .background(Color(0xFF2A2A2A))
             .clickable(onClick = onClick)
@@ -2424,7 +2608,7 @@ private fun CapCutThumbnailClip(
     ) {
         CapCutFilmstrip(
             clip = clip,
-            width = widthDp,
+            width = width,
             frameCache = frameCache,
             isPlaying = isPlaying,
             modifier = Modifier.fillMaxSize()
@@ -2434,44 +2618,78 @@ private fun CapCutThumbnailClip(
                 .align(Alignment.CenterStart)
                 .width(1.dp)
                 .fillMaxHeight()
-                .background(Color.White.copy(alpha = 0.22f))
+                .background(Color.White.copy(alpha = 0.02f))
         )
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .width(2.dp)
+                .width(1.dp)
                 .fillMaxHeight()
-                .background(Color.White.copy(alpha = 0.55f))
+                .background(Color.White.copy(alpha = 0.06f))
         )
+        if (showTransitionMarker && onTransitionClick != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = 0.dp)
+                    .size(if (hasTransition) 10.dp else 8.dp)
+                    .zIndex(if (isSplitBoundaryMarker) 80f else 6f)
+                    .clip(CircleShape)
+                    .background(if (hasTransition) AppColors.Primary.copy(alpha = 0.34f) else Color(0xFF24242A).copy(alpha = 0.38f))
+                    .border(0.5.dp, Color.Black.copy(alpha = 0.18f), CircleShape)
+                    .clickable(onClick = onTransitionClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (hasTransition) (transitionIcon ?: "T") else "+",
+                    color = if (hasTransition) Color.Black else Color.White,
+                    fontSize = if (hasTransition) 6.sp else 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 8.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        if (isSplitBoundaryMarker && onBoundarySelected != null) {
+            CapCutSharedBoundaryHandle(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                pxPerMs = pxPerMs,
+                onSelected = onBoundarySelected,
+                onStarted = onBoundaryTrimStarted,
+                onDragged = onBoundaryTrimDragged,
+                onFinished = onBoundaryTrimFinished
+            )
+        }
         if (selected || splitAffected || trimMode) {
             if (trimMode) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .width(18.dp)
+                        .width(2.dp)
                         .fillMaxHeight()
-                        .background(Color.Black.copy(alpha = 0.46f))
+                        .background(Color.Black.copy(alpha = 0.07f))
                 )
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .width(18.dp)
+                        .width(2.dp)
                         .fillMaxHeight()
-                        .background(Color.Black.copy(alpha = 0.46f))
+                        .background(Color.Black.copy(alpha = 0.07f))
                 )
             }
             Text(
                 TimeFormatter.formatMs(clip.durationMs),
                 color = Color.White,
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 14.dp, vertical = 4.dp)
-                    .background(Color.Black.copy(alpha = 0.42f), RoundedCornerShape(3.dp))
-                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .background(Color.Black.copy(alpha = 0.34f), RoundedCornerShape(2.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
             )
             if (trimMode && !splitAffected) {
                 CapCutTrimHandle(
@@ -2510,7 +2728,7 @@ private fun CapCutTrimHandle(
     var accumulatedDeltaPx by remember { mutableStateOf(0f) }
     Box(
         modifier = modifier
-            .width(28.dp)
+            .width(14.dp)
             .fillMaxHeight()
             .zIndex(30f)
             .pointerInput(clipId, side, pxPerMs) {
@@ -2547,20 +2765,74 @@ private fun CapCutTrimHandle(
     ) {
         Box(
             modifier = Modifier
-                .width(8.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.White),
+                .width(2.dp)
+                .height(32.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(Color.White.copy(alpha = 0.66f)),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .width(2.dp)
-                    .height(24.dp)
+                    .width(1.dp)
+                    .height(14.dp)
                     .clip(RoundedCornerShape(1.dp))
-                    .background(Color.Black.copy(alpha = 0.35f))
+                    .background(Color.Black.copy(alpha = 0.18f))
             )
         }
+    }
+}
+
+@Composable
+private fun CapCutSharedBoundaryHandle(
+    modifier: Modifier,
+    pxPerMs: Float,
+    onSelected: () -> Unit,
+    onStarted: () -> Unit,
+    onDragged: (Long) -> Unit,
+    onFinished: () -> Unit
+) {
+    var accumulatedDeltaPx by remember { mutableStateOf(0f) }
+    Box(
+        modifier = modifier
+            .offset(x = 1.dp)
+            .width(24.dp)
+            .fillMaxHeight()
+            .zIndex(100f)
+            .pointerInput(pxPerMs) {
+                detectDragGestures(
+                    onDragStart = {
+                        accumulatedDeltaPx = 0f
+                        onSelected()
+                        onStarted()
+                    },
+                    onDragEnd = {
+                        accumulatedDeltaPx = 0f
+                        onFinished()
+                    },
+                    onDragCancel = {
+                        accumulatedDeltaPx = 0f
+                        onFinished()
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val msPerPx = 1f / pxPerMs.coerceAtLeast(0.0001f)
+                        accumulatedDeltaPx += dragAmount.x
+                        val deltaMs = (accumulatedDeltaPx * msPerPx).roundToInt().toLong()
+                        if (deltaMs != 0L) onDragged(deltaMs)
+                    }
+                )
+            }
+            .clickable {
+                onSelected()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(Color.White.copy(alpha = 0.34f))
+        )
     }
 }
 
@@ -2573,8 +2845,8 @@ private fun CapCutSplitBoundaryHandle(
     var remainderPx by remember { mutableStateOf(0f) }
     Box(
         modifier = Modifier
-            .width(22.dp)
-            .height(58.dp)
+            .width(18.dp)
+            .height(46.dp)
             .pointerInput(pxPerMs) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
@@ -2599,17 +2871,17 @@ private fun CapCutSplitBoundaryHandle(
     ) {
         Box(
             modifier = Modifier
-                .width(5.dp)
+                .width(3.dp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color.White),
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.White.copy(alpha = 0.66f)),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
                     .width(1.dp)
-                    .height(34.dp)
-                    .background(Color.Black.copy(alpha = 0.32f))
+                    .height(22.dp)
+                    .background(Color.Black.copy(alpha = 0.16f))
             )
         }
     }
@@ -2623,10 +2895,10 @@ private fun CapCutFilmstrip(
     isPlaying: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val tileCount = (width.value / 44f).roundToInt().coerceAtLeast(2)
+    val tileCount = (width.value / 20f).roundToInt().coerceAtLeast(2)
     val isVideo = clip.mediaType == MediaType.VIDEO || clip.mediaType == MediaType.OVERLAY_VIDEO
     val context = LocalContext.current
-    val cacheKey = "${clip.id}:${clip.thumbnailUri}"
+    val cacheKey = "${clip.id}:${clip.thumbnailUri}:${clip.sourceStartMs}:${clip.sourceEndMs}:${clip.durationMs}"
     val latestIsPlaying by rememberUpdatedState(isPlaying)
     val videoFrames by produceState<List<Bitmap?>>(initialValue = frameCache[cacheKey].orEmpty(), cacheKey) {
         value = if (isVideo && clip.thumbnailUri != null) {
@@ -2648,8 +2920,9 @@ private fun CapCutFilmstrip(
                 loadTimelineFrames(
                     context = context,
                     uriString = clip.thumbnailUri,
+                    sourceStartMs = clip.sourceStartMs,
                     durationMs = clip.durationMs,
-                    count = 6,
+                    count = 9,
                     clipId = clip.id,
                     playbackActiveAtRequest = false
                 ).also {
@@ -2665,7 +2938,7 @@ private fun CapCutFilmstrip(
         repeat(tileCount) { index ->
             Box(
                 modifier = Modifier
-                    .width(44.dp)
+                    .width(20.dp)
                     .fillMaxHeight()
             ) {
                 val frame = if (videoFrames.isNotEmpty()) videoFrames[index % videoFrames.size] else null
@@ -2715,7 +2988,7 @@ private fun CapCutFilmstrip(
                         .align(Alignment.CenterEnd)
                         .width(1.dp)
                         .fillMaxHeight()
-                        .background(Color.Black.copy(alpha = 0.24f))
+                        .background(Color.Black.copy(alpha = 0.02f))
                 )
             }
         }
@@ -2725,6 +2998,7 @@ private fun CapCutFilmstrip(
 private suspend fun loadTimelineFrames(
     context: Context,
     uriString: String,
+    sourceStartMs: Long,
     durationMs: Long,
     count: Int,
     clipId: String,
@@ -2741,7 +3015,9 @@ private suspend fun loadTimelineFrames(
         retriever.setDataSource(context, Uri.parse(uriString))
         val frames = List(count) { index ->
             val fraction = if (count <= 1) 0f else index.toFloat() / (count - 1)
-            val timeUs = (durationMs.coerceAtLeast(1L) * 1000L * fraction).toLong()
+            val sourceFrameMs = sourceStartMs.coerceAtLeast(0L) +
+                (durationMs.coerceAtLeast(1L) * fraction).roundToLong()
+            val timeUs = sourceFrameMs * 1000L
             retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?.let { Bitmap.createScaledBitmap(it, 96, 108, false) }
         }
@@ -2807,13 +3083,13 @@ private fun CapCutAddClipButton(
 ) {
     Box(
         modifier = modifier
-            .size(50.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color.White)
+            .size(24.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color.White.copy(alpha = 0.74f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.Add, contentDescription = "Add clip", tint = Color.Black, modifier = Modifier.size(34.dp))
+        Icon(Icons.Default.Add, contentDescription = "Add clip", tint = Color.Black.copy(alpha = 0.76f), modifier = Modifier.size(14.dp))
     }
 }
 
@@ -2835,14 +3111,14 @@ private fun AddTrackLane(label: String, onClick: (() -> Unit)?) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .padding(top = 5.dp, end = 20.dp)
+            .height(30.dp)
+            .padding(top = 2.dp, end = 12.dp)
             .clip(RoundedCornerShape(2.dp))
             .background(Color(0xFF262626))
             .clickable(enabled = onClick != null) { onClick?.invoke() },
         contentAlignment = Alignment.CenterStart
     ) {
-        Text(label, color = AppColors.TextSecondary, fontSize = 14.sp, modifier = Modifier.padding(start = 14.dp))
+        Text(label, color = AppColors.TextSecondary, fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
@@ -2854,15 +3130,15 @@ private data class TimelineToolbarTool(
 )
 
 private val primaryTimelineTools = listOf(
-    TimelineToolbarTool("Edit", "✂"),
-    TimelineToolbarTool("Audio", "♪"),
+    TimelineToolbarTool("Edit", "Edit"),
+    TimelineToolbarTool("Audio", "Aud"),
     TimelineToolbarTool("Text", "T"),
-    TimelineToolbarTool("Effects", "✩"),
-    TimelineToolbarTool("Overlay", "▧"),
-    TimelineToolbarTool("Captions", "▤"),
-    TimelineToolbarTool("Filters", "◉"),
-    TimelineToolbarTool("Adjust", "☼"),
-    TimelineToolbarTool("Stickers", "✩"),
+    TimelineToolbarTool("Effects", "Fx"),
+    TimelineToolbarTool("Overlay", "Ov"),
+    TimelineToolbarTool("Captions", "Cap"),
+    TimelineToolbarTool("Filters", "Fil"),
+    TimelineToolbarTool("Adjust", "Adj"),
+    TimelineToolbarTool("Stickers", "Stk"),
     TimelineToolbarTool("AI Avatar", "AI"),
     TimelineToolbarTool("AI Media", "AI"),
     TimelineToolbarTool("Aspect Ratio", "9:16"),
@@ -2873,21 +3149,21 @@ private val editTimelineTools = listOf(
     TimelineToolbarTool("Back", "<"),
     TimelineToolbarTool("Undo", "Undo"),
     TimelineToolbarTool("Redo", "Redo"),
-    TimelineToolbarTool("Trim", "]["),
+    TimelineToolbarTool("Trim", "Trim"),
     TimelineToolbarTool("Transition", "T"),
-    TimelineToolbarTool("Split", "✂"),
-    TimelineToolbarTool("Volume", "▱"),
-    TimelineToolbarTool("Animations", "◇"),
-    TimelineToolbarTool("Effects", "✩"),
-    TimelineToolbarTool("Delete", "⌫"),
+    TimelineToolbarTool("Split", "Split"),
+    TimelineToolbarTool("Volume", "Vol"),
+    TimelineToolbarTool("Animations", "Anim"),
+    TimelineToolbarTool("Effects", "Fx"),
+    TimelineToolbarTool("Delete", "Del"),
     TimelineToolbarTool("Speed", "1x"),
-    TimelineToolbarTool("Beats", "♪"),
-    TimelineToolbarTool("Crop", "□"),
-    TimelineToolbarTool("Duplicate", "⧉"),
-    TimelineToolbarTool("Replace", "⇄"),
-    TimelineToolbarTool("Overlay", "▧"),
-    TimelineToolbarTool("Adjust", "☼"),
-    TimelineToolbarTool("Filters", "●"),
+    TimelineToolbarTool("Beats", "Beat"),
+    TimelineToolbarTool("Crop", "Crop"),
+    TimelineToolbarTool("Duplicate", "Dup"),
+    TimelineToolbarTool("Replace", "Rep"),
+    TimelineToolbarTool("Overlay", "Ov"),
+    TimelineToolbarTool("Adjust", "Adj"),
+    TimelineToolbarTool("Filters", "Fil"),
     TimelineToolbarTool("Retouch", "Face"),
     TimelineToolbarTool("Video Quality", "HD"),
     TimelineToolbarTool("Remove BG", "BG"),
@@ -2967,13 +3243,15 @@ private fun TimelineToolbar(
     toolbarMode: EditorToolbarMode,
     canUndo: Boolean,
     canRedo: Boolean,
+    splitButtonEnabled: Boolean,
     onPrimaryTool: (String) -> Unit,
     onEditTool: (EditToolAction) -> Unit
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .zIndex(50f),
         color = Color(0xFF0F0F14),
         tonalElevation = 4.dp
     ) {
@@ -2982,6 +3260,7 @@ private fun TimelineToolbar(
                 val enabled = when (tool.label) {
                     "Undo" -> canUndo
                     "Redo" -> canRedo
+                    "Split" -> splitButtonEnabled
                     else -> true
                 }
                 tool.copy(
@@ -2991,7 +3270,7 @@ private fun TimelineToolbar(
             }
             TimelineToolLazyRow(
                 tools = tools,
-                modifier = Modifier.fillMaxWidth().height(92.dp)
+                modifier = Modifier.fillMaxWidth().height(80.dp)
             )
         } else {
             val tools = primaryTimelineTools.map { tool ->
@@ -2999,7 +3278,7 @@ private fun TimelineToolbar(
             }
             TimelineToolLazyRow(
                 tools = tools,
-                modifier = Modifier.fillMaxWidth().height(82.dp)
+                modifier = Modifier.fillMaxWidth().height(76.dp)
             )
         }
     }
@@ -3028,8 +3307,8 @@ private fun TimelineToolbarButton(tool: TimelineToolbarTool) {
     val contentAlpha = if (tool.enabled) 1f else 0.34f
     Column(
         modifier = Modifier
-            .width(if (isBack) 54.dp else 76.dp)
-            .height(86.dp)
+            .width(if (isBack) 48.dp else 66.dp)
+            .height(76.dp)
             .clip(RoundedCornerShape(if (isBack) 4.dp else 0.dp))
             .background(if (isBack) Color(0xFF25252A) else Color.Transparent)
             .clickable(enabled = tool.enabled && tool.onClick != null) { tool.onClick?.invoke() }
@@ -3040,19 +3319,19 @@ private fun TimelineToolbarButton(tool: TimelineToolbarTool) {
         Text(
             tool.icon,
             color = Color.White.copy(alpha = contentAlpha),
-            fontSize = if (tool.icon.length <= 1) 29.sp else 17.sp,
+            fontSize = if (tool.icon.length <= 1) 22.sp else 12.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.height(38.dp)
+            modifier = Modifier.height(26.dp)
         )
         Spacer(Modifier.height(2.dp))
         Text(
             tool.label,
             color = Color.White.copy(alpha = 0.86f * contentAlpha),
-            fontSize = 10.sp,
-            lineHeight = 12.sp,
+            fontSize = 9.sp,
+            lineHeight = 10.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -3061,7 +3340,7 @@ private fun TimelineToolbarButton(tool: TimelineToolbarTool) {
     }
 }
 
-// ── Preview area ───────────────────────────────────────────────────────────
+// â”€â”€ Preview area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -3314,7 +3593,7 @@ private fun CapCutTransitionPanel(
                 },
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Text("✓", color = AppColors.Primary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("OK", color = AppColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -3423,7 +3702,7 @@ private fun CapCutTransitionPanel(
                                     .background(AppColors.Primary),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("✓", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("OK", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -3813,7 +4092,7 @@ private fun PreviewArea(
                 .clickable(onClick = onTogglePlay),
             contentAlignment = Alignment.Center
         ) {
-            Text(if (isPlaying) "⏸" else "▶", fontSize = 22.sp, color = Color.White)
+            Text(if (isPlaying) "Pause" else "Play", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
         }
         // Time overlay bottom-left
         Text(
@@ -3825,7 +4104,7 @@ private fun PreviewArea(
     }
 }
 
-// ── Clip tile ──────────────────────────────────────────────────────────────
+// â”€â”€ Clip tile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @Composable
 private fun TimelineClipTile(
@@ -3874,49 +4153,7 @@ private fun TimelineClipTile(
     }
 }
 
-// ── Transition slot ────────────────────────────────────────────────────────
-
-@Composable
-private fun TransitionSlot(
-    transition: com.clipforge.ai.domain.model.Transition?,
-    isActive: Boolean,
-    onClick: () -> Unit
-) {
-    val hasT = transition != null && transition.type != TransitionType.NONE
-    val icon = transition?.type?.let(::capCutTransitionIcon) ?: "+"
-    Column(
-        modifier            = Modifier.width(SLOT_W),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(
-                    if (hasT)
-                        Brush.linearGradient(listOf(AppColors.Primary, AppColors.Secondary))
-                    else
-                        Brush.linearGradient(listOf(AppColors.SurfaceVariant, AppColors.SurfaceVariant))
-                )
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) { Text(icon, fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold) }
-        if (hasT) {
-            Text(
-                "${transition!!.type.label} ${transition.durationMs}ms",
-                fontSize   = 7.sp,
-                color      = if (isActive) AppColors.Primary else AppColors.TextSecondary,
-                textAlign  = TextAlign.Center,
-                maxLines   = 2,
-                lineHeight = 8.sp,
-                modifier   = Modifier.width(SLOT_W)
-            )
-        }
-    }
-}
-
-// ── Clip actions panel ─────────────────────────────────────────────────────
+// â”€â”€ Clip actions panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @Composable
 private fun ClipActionsPanel(
@@ -3964,7 +4201,7 @@ private fun ClipActionsPanel(
                     Text("Transition", color = AppColors.TextSecondary, fontSize = 11.sp)
                     Text(type.label, color = AppColors.OnBackground, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
-                Text("Change ›", color = AppColors.Primary, fontSize = 12.sp)
+                Text("Change", color = AppColors.Primary, fontSize = 12.sp)
             }
             Spacer(Modifier.height(AppSpacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
