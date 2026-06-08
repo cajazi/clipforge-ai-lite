@@ -173,7 +173,15 @@ class ExportManager(
     private fun finishComplete(projectId: String, result: CrossfadeExecutor.Result.Done) {
         if (activeProjectId != projectId) return
         Log.d(TAG, "EXPORT_COMPLETE project=$projectId path=${result.outputPath} bytes=${result.bytes} durationMs=${result.durationMs}")
+        if (userCancelRequested) {
+            finishCancelled(projectId, "user")
+            return
+        }
         val mediaStoreResult = publishExportToMediaStore(result.outputPath)
+        if (mediaStoreResult.uri == null) {
+            finishFailed(projectId, "Couldn't save to gallery")
+            return
+        }
         activeProjectId = null
         activeJob = null
         scope.launch {
@@ -201,9 +209,13 @@ class ExportManager(
     private fun publishExportToMediaStore(outputPath: String): MediaStoreSaveResult {
         val source = File(outputPath)
         if (!source.exists() || source.length() <= 0L) {
-            Log.e(TAG, "EXPORT_MEDIASTORE_SAVE_FAILED error=source_missing path=$outputPath")
+            Log.e(TAG, "MEDIASTORE_PUBLISH_FAILED error=source_missing path=$outputPath")
             Log.d(TAG, "EXPORT_GALLERY_VISIBLE=false")
             return MediaStoreSaveResult(uri = null, isGalleryVisible = false)
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return publishExportToLegacyGallery(source)
         }
 
         val resolver = application.contentResolver
@@ -212,10 +224,8 @@ class ExportManager(
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/ClipForge AI")
-                put(MediaStore.Video.Media.IS_PENDING, 1)
-            }
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/ClipForge AI")
+            put(MediaStore.Video.Media.IS_PENDING, 1)
         }
 
         Log.d(
@@ -228,26 +238,79 @@ class ExportManager(
         return try {
             uri = resolver.insert(collection, values)
                 ?: throw IllegalStateException("ContentResolver.insert returned null")
-            resolver.openOutputStream(uri)?.use { out ->
+            val bytesWritten = resolver.openOutputStream(uri)?.use { out ->
                 source.inputStream().use { input -> input.copyTo(out) }
             } ?: throw IllegalStateException("openOutputStream returned null")
+            if (bytesWritten <= 0L) {
+                throw IllegalStateException("Copied zero bytes to MediaStore")
+            }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val completeValues = ContentValues().apply {
-                    put(MediaStore.Video.Media.IS_PENDING, 0)
-                }
-                resolver.update(uri, completeValues, null, null)
+            val completeValues = ContentValues().apply {
+                put(MediaStore.Video.Media.IS_PENDING, 0)
+            }
+            val updated = resolver.update(uri, completeValues, null, null)
+            if (updated <= 0) {
+                throw IllegalStateException("Failed to clear MediaStore pending state")
             }
 
             val visible = isMediaStoreVideoVisible(uri)
-            Log.d(TAG, "EXPORT_MEDIASTORE_SAVE_AFTER uri=$uri")
+            Log.d(TAG, "EXPORT_MEDIASTORE_SAVE_AFTER uri=$uri bytesWritten=$bytesWritten")
             Log.d(TAG, "EXPORT_GALLERY_VISIBLE=$visible")
             MediaStoreSaveResult(uri = uri, isGalleryVisible = visible)
         } catch (t: Throwable) {
-            Log.e(TAG, "EXPORT_MEDIASTORE_SAVE_FAILED error=${t.message}", t)
+            Log.e(TAG, "MEDIASTORE_PUBLISH_FAILED error=${t.message}", t)
             uri?.let { failedUri ->
                 try { resolver.delete(failedUri, null, null) } catch (_: Throwable) {}
             }
+            Log.d(TAG, "EXPORT_GALLERY_VISIBLE=false")
+            MediaStoreSaveResult(uri = null, isGalleryVisible = false)
+        }
+    }
+
+    private fun publishExportToLegacyGallery(source: File): MediaStoreSaveResult {
+        val resolver = application.contentResolver
+        val displayName = "ClipForge_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.mp4"
+        val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+        val outputDir = File(moviesDir, "ClipForge AI")
+        val destination = File(outputDir, displayName)
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.DATA, destination.absolutePath)
+        }
+        Log.d(
+            TAG,
+            "EXPORT_LEGACY_GALLERY_SAVE_BEFORE source=${source.absolutePath} bytes=${source.length()} " +
+                "destination=${destination.absolutePath}"
+        )
+        var uri: Uri? = null
+        return try {
+            if (!outputDir.exists() && !outputDir.mkdirs()) {
+                throw IllegalStateException("Failed to create gallery output directory")
+            }
+
+            uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("ContentResolver.insert returned null")
+            val bytesWritten = resolver.openOutputStream(uri)?.use { out ->
+                source.inputStream().use { input -> input.copyTo(out) }
+            } ?: throw IllegalStateException("openOutputStream returned null")
+            if (bytesWritten <= 0L) {
+                throw IllegalStateException("Copied zero bytes to legacy gallery path")
+            }
+
+            Log.d(TAG, "EXPORT_LEGACY_GALLERY_SAVE_AFTER uri=$uri bytesWritten=$bytesWritten")
+            Log.d(TAG, "EXPORT_GALLERY_VISIBLE=true")
+            MediaStoreSaveResult(uri = uri, isGalleryVisible = true)
+        } catch (t: Throwable) {
+            Log.e(TAG, "MEDIASTORE_PUBLISH_FAILED legacy=true error=${t.message}", t)
+            uri?.let { failedUri ->
+                try { resolver.delete(failedUri, null, null) } catch (_: Throwable) {}
+            }
+            try {
+                if (destination.exists() && destination.length() <= 0L) {
+                    destination.delete()
+                }
+            } catch (_: Throwable) {}
             Log.d(TAG, "EXPORT_GALLERY_VISIBLE=false")
             MediaStoreSaveResult(uri = null, isGalleryVisible = false)
         }
