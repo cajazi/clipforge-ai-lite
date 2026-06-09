@@ -238,22 +238,29 @@ object CrossfadeRenderPlan {
                 val e = entries[i]
                 val clipStart = e.trimStartMs
                 val clipEnd = e.trimEndMs
-                // AUDIO FIX: for Crossfade/Slide/Zoom, B has no audio during the
-                // transition (B is bitmap-only overlay). Start B's plain body from
-                // trimStart so its audio is NOT cut at the front.
-                // For DipToColor, B was already a real MediaItem for its head window,
-                // so we skip that window to avoid replaying audio. (unchanged)
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
-                val bodyStart = if (hasDipIncoming) clipStart + headConsumed[i] else clipStart
-                // TAIL FIX: bodyEnd must always be clipEnd (trimEndMs).
-                // tailConsumed[i] is the portion of A's tail used by the *outgoing*
-                // transition op (Crossfade/Slide/Zoom/Dip). That op is emitted as a
-                // separate item AFTER the plain body, so the plain body must run all
-                // the way to clipEnd — not stop early by tailConsumed ms.
-                // Stopping early was cutting off the last tailConsumed ms of every
-                // clip that had an outgoing transition.
-                val bodyEnd = clipEnd
+                val hasOverlapIncoming = incomingBoundary >= 0 &&
+                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isZoom[incomingBoundary])
+                val outgoingBoundary = i
+                val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
+                val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
+                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isZoom[outgoingBoundary])
+
+                // Crossfade/Slide/Zoom are overlap families: the transition op already
+                // renders A's tail and samples B's head, so the surrounding plain clips
+                // must consume those windows to keep total duration at A + B - transition.
+                // Dip is serial, but its op still owns A's tail and B's head exactly once.
+                val bodyStart = if (hasDipIncoming || hasOverlapIncoming) {
+                    clipStart + headConsumed[i]
+                } else {
+                    clipStart
+                }
+                val bodyEnd = if (hasDipOutgoing || hasOverlapOutgoing) {
+                    clipEnd - tailConsumed[i]
+                } else {
+                    clipEnd
+                }
 
                 // Emit the plain body of this clip (the part not consumed by crossfades).
                 if (bodyEnd > bodyStart) {
