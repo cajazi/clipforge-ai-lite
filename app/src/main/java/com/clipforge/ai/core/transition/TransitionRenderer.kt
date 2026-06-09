@@ -54,16 +54,18 @@ data class SegmentContext(
  *
  * Contract:
  * - [emit] returns the [EditedMediaItem]s for this boundary segment, in composition order.
- * - It must build/own any frame cache it needs and register cleanup via the caller-provided
- *   hooks in a later phase (Phase A defines the shape only; lifecycle wiring lands with the
- *   executor flip, which is a protected-file change and out of scope now).
- * - It must use [SegmentContext.compositionStartUs] for overlay fade windows.
+ * - It must build/own any frame cache it needs and hand teardown to [registerCleanup]; the
+ *   caller (the executor, after the Phase D flip) owns *when* cleanup runs — typically after
+ *   the transformer completes — exactly as the legacy `caches` list does today. The cleanup
+ *   registrar keeps the framework core decoupled from `core/gl` (no cache type leaks here).
+ * - It must use [SegmentContext.compositionStartUs] for overlay fade windows (segment-local
+ *   0 was the historical crossfade bug).
+ * - [emit] may BLOCK (it builds frame caches via MediaCodec) and MUST be called off the main
+ *   thread — the executor calls it inside `Dispatchers.IO`.
  *
- * Two implementations are planned (Phase B+): an overlay-backed adapter wrapping today's
- * BitmapOverlay families (zero behavior change) and a shader-backed renderer for CapCut-feel
- * effects. Both satisfy this one interface.
- *
- * Phase A: interface only. No implementations, nothing wired.
+ * Two implementations are planned: an overlay-backed adapter wrapping today's BitmapOverlay
+ * families (Phase B, zero behavior change) and a shader-backed renderer for CapCut-feel
+ * effects (later). Both satisfy this one interface.
  */
 @UnstableApi
 interface TransitionRenderer {
@@ -71,6 +73,12 @@ interface TransitionRenderer {
     /** True if this renderer can actually bake the effect into the export. */
     val supportsExport: Boolean
 
-    /** Build the export items for one boundary segment. */
-    fun emit(ctx: SegmentContext): List<EditedMediaItem>
+    /**
+     * Build the export items for one boundary segment.
+     *
+     * @param ctx             window/path/output primitives for this boundary
+     * @param registerCleanup hand back a teardown lambda (e.g. `{ cache.release() }`); the
+     *                        caller runs it after export completes. May be called 0..n times.
+     */
+    fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem>
 }

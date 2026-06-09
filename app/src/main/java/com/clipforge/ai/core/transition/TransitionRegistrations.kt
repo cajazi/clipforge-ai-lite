@@ -1,0 +1,101 @@
+package com.clipforge.ai.core.transition
+
+import androidx.media3.common.util.UnstableApi
+import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.SlideTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.WhipPanTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.ZoomTransitionRenderer
+import com.clipforge.ai.domain.model.TransitionType
+
+/**
+ * Built-in transition registrations for the currently-exportable families, plus the mapping
+ * between the persisted [TransitionType] enum and framework [TransitionId]s.
+ *
+ * IMPORTANT (Phase B safety): calling [registerBuiltIns] only populates [TransitionRegistry].
+ * Nothing in the live export/preview path reads the registry yet (the executor flip is Phase
+ * D), so registering changes NO runtime behavior. It exists so the dual-run parity gate and
+ * future phases have a populated registry to validate against.
+ *
+ * The family grouping mirrors CrossfadeRenderPlan's type-string sets exactly.
+ */
+@UnstableApi
+object TransitionRegistrations {
+
+    // Stable framework ids (one per family member we currently bake).
+    val DISSOLVE = TransitionId("dissolve")
+    val FADE_BLACK = TransitionId("fade_black")
+    val FADE_WHITE = TransitionId("fade_white")
+    val SLIDE_LEFT = TransitionId("slide_left")
+    val SLIDE_RIGHT = TransitionId("slide_right")
+    val SLIDE_UP = TransitionId("slide_up")
+    val SLIDE_DOWN = TransitionId("slide_down")
+    val ZOOM_IN = TransitionId("zoom_in")
+    val ZOOM_OUT = TransitionId("zoom_out")
+    val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
+    val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
+
+    /**
+     * Maps a persisted [TransitionType] to its framework [TransitionId], or null if that type
+     * is not yet exportable (falls back to a plain cut in export, as today).
+     */
+    fun idFor(type: TransitionType): TransitionId? = when (type) {
+        TransitionType.DISSOLVE, TransitionType.CROSS_DISSOLVE -> DISSOLVE
+        TransitionType.FADE, TransitionType.FADE_BLACK -> FADE_BLACK
+        TransitionType.FADE_WHITE -> FADE_WHITE
+        TransitionType.SLIDE_LEFT -> SLIDE_LEFT
+        TransitionType.SLIDE_RIGHT -> SLIDE_RIGHT
+        TransitionType.SLIDE_UP -> SLIDE_UP
+        TransitionType.SLIDE_DOWN -> SLIDE_DOWN
+        TransitionType.ZOOM_IN -> ZOOM_IN
+        TransitionType.ZOOM_OUT -> ZOOM_OUT
+        TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
+        TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
+        else -> null
+    }
+
+    /** Idempotent: registers every built-in family into [TransitionRegistry]. */
+    fun registerBuiltIns(registry: TransitionRegistry = TransitionRegistry) {
+        val crossfade = CrossfadeTransitionRenderer()
+        val dip = DipToColorTransitionRenderer()
+        val slide = SlideTransitionRenderer()
+        val zoom = ZoomTransitionRenderer()
+        val whip = WhipPanTransitionRenderer()
+
+        fun reg(
+            id: TransitionId,
+            name: String,
+            category: TransitionCategory,
+            timing: TimingModel,
+            renderer: com.clipforge.ai.core.transition.TransitionRenderer,
+            easing: Easing = Easing.Smoothstep
+        ) {
+            registry.register(
+                TransitionRegistration(
+                    descriptor = TransitionDescriptor(
+                        id = id,
+                        displayName = name,
+                        category = category,
+                        timingModel = timing,
+                        easing = easing,
+                        isExportable = true
+                    ),
+                    renderer = renderer,
+                    previewRenderer = PreviewRenderer.PlainCut // preview migration is a later phase
+                )
+            )
+        }
+
+        reg(DISSOLVE, "Dissolve", TransitionCategory.DISSOLVE, TimingModel.Overlap, crossfade)
+        reg(FADE_BLACK, "Fade Black", TransitionCategory.FADE, TimingModel.SequentialDip, dip)
+        reg(FADE_WHITE, "Fade White", TransitionCategory.FADE, TimingModel.SequentialDip, dip)
+        reg(SLIDE_LEFT, "Slide Left", TransitionCategory.MOTION, TimingModel.Overlap, slide)
+        reg(SLIDE_RIGHT, "Slide Right", TransitionCategory.MOTION, TimingModel.Overlap, slide)
+        reg(SLIDE_UP, "Slide Up", TransitionCategory.MOTION, TimingModel.Overlap, slide)
+        reg(SLIDE_DOWN, "Slide Down", TransitionCategory.MOTION, TimingModel.Overlap, slide)
+        reg(ZOOM_IN, "Zoom In", TransitionCategory.MOTION, TimingModel.Overlap, zoom)
+        reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom)
+        reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, Easing.ExpoOut)
+        reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, Easing.ExpoOut)
+    }
+}
