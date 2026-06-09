@@ -97,6 +97,8 @@ object CrossfadeExecutor {
                 "op[$index]=SLIDE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Zoom ->
                 "op[$index]=ZOOM pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
+            is CrossfadeRenderPlan.Op.WhipPan ->
+                "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
         }
 
     /**
@@ -318,6 +320,68 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "ZOOM_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "ZOOM mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs zoom=[$zoomStartUs..$zoomEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.WhipPan -> {
+                        onStage("Preparing whip pan transition...")
+                        val whipStartUs = runningTimeMs * 1000L
+                        val whipEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val whipFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "WHIP_PAN_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$whipFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = whipFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "WHIP_PAN_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "WHIP_PAN_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Whip pan cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val directionName = op.direction.removePrefix("WHIP_PAN_")
+                        val dir = SlideOverlay.Direction.valueOf(directionName)
+                        val blurDirectionX = when (dir) {
+                            SlideOverlay.Direction.LEFT -> 1f
+                            SlideOverlay.Direction.RIGHT -> -1f
+                            SlideOverlay.Direction.UP,
+                            SlideOverlay.Direction.DOWN -> 0f
+                        }
+                        val blurDirectionY = when (dir) {
+                            SlideOverlay.Direction.UP -> 1f
+                            SlideOverlay.Direction.DOWN -> -1f
+                            SlideOverlay.Direction.LEFT,
+                            SlideOverlay.Direction.RIGHT -> 0f
+                        }
+                        Log.d(TAG, "WHIP_PAN_EFFECT_CREATE_BEFORE index=$index dir=$dir blurDir=($blurDirectionX,$blurDirectionY) window=[$whipStartUs..$whipEndUs]")
+                        val blurEffect = DirectionalBlurGlEffect(
+                            startTimeUs = whipStartUs,
+                            endTimeUs = whipEndUs,
+                            directionX = blurDirectionX,
+                            directionY = blurDirectionY
+                        )
+                        val overlay = SlideOverlay(cache, whipStartUs, whipEndUs, dir)
+                        Log.d(TAG, "WHIP_PAN_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(blurEffect, OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "WHIP_PAN_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "WHIP_PAN dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs whip=[$whipStartUs..$whipEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     }

@@ -77,6 +77,7 @@ import coil.compose.AsyncImage
 import com.clipforge.ai.R
 import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.core.designsystem.AppSpacing
+import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
 import com.clipforge.ai.domain.model.MediaType
 import com.clipforge.ai.domain.model.TimelineSegment
@@ -505,202 +506,83 @@ private fun previewTransitionVisualState(
     widthPx: Float,
     heightPx: Float
 ): PreviewTransitionVisualState {
-    val p = progress.coerceIn(0f, 1f)
-    val peak = (1f - abs((p * 2f) - 1f)).coerceIn(0f, 1f)
-    val glitchJitter = if (((p * 20f).roundToInt() % 2) == 0) 10f else -10f
-    return when (type) {
-        TransitionType.FADE,
-        TransitionType.DISSOLVE,
-        TransitionType.CROSS_DISSOLVE -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p),
+    val rawProgress = progress.coerceIn(0f, 1f)
+    val p = TransitionSpec.smoothstep(rawProgress)
+    val spec = TransitionSpec.forType(type)
+    return when (spec) {
+        TransitionSpec.None,
+        TransitionSpec.PlainCut -> PreviewTransitionVisualState()
+        TransitionSpec.Crossfade -> PreviewTransitionVisualState(
+            outgoing = PreviewTransitionLayerState(),
             incoming = PreviewTransitionLayerState(alpha = p)
         )
-        TransitionType.FADE_BLACK -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p),
-            incoming = PreviewTransitionLayerState(alpha = p),
-            overlayColor = Color.Black,
-            overlayAlpha = peak * 0.18f
-        )
-        TransitionType.FADE_WHITE -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p),
-            incoming = PreviewTransitionLayerState(alpha = p),
-            overlayColor = Color.White,
-            overlayAlpha = peak * 0.22f
-        )
-        TransitionType.SLIDE_LEFT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * (1f - p))
-        )
-        TransitionType.SLIDE_RIGHT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationX = -widthPx * (1f - p))
-        )
-        TransitionType.SLIDE_UP -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * (1f - p))
-        )
-        TransitionType.SLIDE_DOWN -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * (1f - p))
-        )
-        TransitionType.PUSH_LEFT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(translationX = -widthPx * p),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * (1f - p))
-        )
-        TransitionType.PUSH_RIGHT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(translationX = widthPx * p),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationX = -widthPx * (1f - p))
-        )
-        TransitionType.PUSH_UP -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(translationY = -heightPx * p),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * (1f - p))
-        )
-        TransitionType.PUSH_DOWN -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(translationY = heightPx * p),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * (1f - p))
-        )
-        TransitionType.ZOOM_IN -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.25f), scale = 1f + (p * 0.08f)),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 0.82f + (p * 0.18f))
-        )
-        TransitionType.ZOOM_OUT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.35f), scale = 1f - (p * 0.14f)),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 1.14f - (p * 0.14f))
-        )
-        TransitionType.BLUR,
-        TransitionType.MOTION_BLUR,
-        TransitionType.GAUSSIAN_BLUR -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.25f), scale = 1f + (p * 0.03f)),
-            incoming = PreviewTransitionLayerState(
-                alpha = p,
-                translationX = if (type == TransitionType.MOTION_BLUR) widthPx * 0.08f * (1f - p) else 0f,
-                scale = if (type == TransitionType.GAUSSIAN_BLUR) 1.06f - (p * 0.06f) else 1f
-            ),
-            overlayColor = Color(0xFF20D4F5),
-            overlayAlpha = peak * if (type == TransitionType.GAUSSIAN_BLUR) 0.16f else 0.10f
-        )
-        TransitionType.SPIN,
-        TransitionType.ROTATE,
-        TransitionType.CAMERA_ROLL -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.35f), rotationZ = -p * 14f, scale = 1f + (p * 0.04f)),
-            incoming = PreviewTransitionLayerState(
-                alpha = p,
-                rotationZ = (1f - p) * if (type == TransitionType.CAMERA_ROLL) 70f else 28f,
-                scale = 0.88f + (p * 0.12f)
+        is TransitionSpec.Dip -> {
+            val color = when (spec.color) {
+                TransitionSpec.DipColor.Black -> Color.Black
+                TransitionSpec.DipColor.White -> Color.White
+            }
+            val firstHalf = rawProgress <= 0.5f
+            val dipOut = if (firstHalf) TransitionSpec.smoothstep(rawProgress * 2f) else 1f
+            val dipIn = if (firstHalf) 1f else 1f - TransitionSpec.smoothstep((rawProgress - 0.5f) * 2f)
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(alpha = if (firstHalf) 1f else 0f),
+                incoming = PreviewTransitionLayerState(alpha = if (firstHalf) 0f else 1f),
+                overlayColor = color,
+                overlayAlpha = if (firstHalf) dipOut else dipIn
             )
-        )
-        TransitionType.WHIP_PAN_LEFT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.35f), translationX = -widthPx * p * 0.65f, scale = 1.04f),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = widthPx * (1f - p), scale = 1.04f),
-            overlayColor = Color.White,
-            overlayAlpha = peak * 0.12f
-        )
-        TransitionType.WHIP_PAN_RIGHT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.35f), translationX = widthPx * p * 0.65f, scale = 1.04f),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = -widthPx * (1f - p), scale = 1.04f),
-            overlayColor = Color.White,
-            overlayAlpha = peak * 0.12f
-        )
-        TransitionType.FLASH -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.18f)),
-            incoming = PreviewTransitionLayerState(alpha = p),
-            overlayColor = Color.White,
-            overlayAlpha = peak * 0.55f
-        )
-        TransitionType.FLASH_BLACK -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.18f)),
-            incoming = PreviewTransitionLayerState(alpha = p),
-            overlayColor = Color.Black,
-            overlayAlpha = peak * 0.42f
-        )
-        TransitionType.BOUNCE -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.25f), scale = 1f - (peak * 0.05f)),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 0.80f + (p * 0.25f) - (peak * 0.05f))
-        )
-        TransitionType.SHAKE -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.25f), translationX = glitchJitter * peak),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = -glitchJitter * peak)
-        )
-        TransitionType.SWING -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.3f), rotationZ = -12f * peak),
-            incoming = PreviewTransitionLayerState(alpha = p, rotationZ = 12f * (1f - p), scale = 0.92f + (p * 0.08f))
-        )
-        TransitionType.POP -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, scale = 1f + (peak * 0.08f)),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 0.72f + (p * 0.36f))
-        )
-        TransitionType.WIPE -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * (1f - p))
-        )
-        TransitionType.WIPE_UP -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * (1f - p))
-        )
-        TransitionType.WIPE_DOWN -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(),
-            incoming = PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * (1f - p))
-        )
-        TransitionType.MIRROR_FLIP,
-        TransitionType.FLIP_HORIZONTAL -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, rotationY = -90f * p),
-            incoming = PreviewTransitionLayerState(alpha = p, rotationY = 90f * (1f - p))
-        )
-        TransitionType.FLIP_VERTICAL -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, rotationZ = 90f * p, scale = 1f - (p * 0.1f)),
-            incoming = PreviewTransitionLayerState(alpha = p, rotationZ = -90f * (1f - p), scale = 0.9f + (p * 0.1f))
-        )
-        TransitionType.GLITCH,
-        TransitionType.RGB_SPLIT,
-        TransitionType.CHROMATIC_ABERRATION -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.28f), translationX = glitchJitter * p),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = -glitchJitter * (1f - p)),
-            overlayColor = if (type == TransitionType.CHROMATIC_ABERRATION) Color(0xFF20D4F5) else if (((p * 12f).roundToInt() % 2) == 0) Color(0xFFFF3FB4) else Color(0xFF20D4F5),
-            overlayAlpha = peak * if (type == TransitionType.RGB_SPLIT) 0.22f else 0.16f
-        )
-        TransitionType.CUBE_LEFT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.2f), translationX = -widthPx * p * 0.45f, rotationY = -75f * p, scale = 1f - (p * 0.08f)),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = widthPx * (1f - p) * 0.45f, rotationY = 75f * (1f - p), scale = 0.92f + (p * 0.08f))
-        )
-        TransitionType.CUBE_RIGHT -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.2f), translationX = widthPx * p * 0.45f, rotationY = 75f * p, scale = 1f - (p * 0.08f)),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = -widthPx * (1f - p) * 0.45f, rotationY = -75f * (1f - p), scale = 0.92f + (p * 0.08f))
-        )
-        TransitionType.DOOR_OPEN -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, scale = 1f + (p * 0.12f), rotationY = -45f * p),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 0.88f + (p * 0.12f))
-        )
-        TransitionType.DOOR_CLOSE -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.6f), scale = 1f - (p * 0.12f)),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 1.12f - (p * 0.12f), rotationY = 45f * (1f - p))
-        )
-        TransitionType.CAROUSEL -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.5f), translationX = -widthPx * p * 0.35f, rotationY = -55f * p),
-            incoming = PreviewTransitionLayerState(alpha = p, translationX = widthPx * (1f - p) * 0.35f, rotationY = 55f * (1f - p))
-        )
-        TransitionType.BOOK_TURN,
-        TransitionType.PAGE_TURN -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, rotationY = -110f * p, scale = 1f - (p * 0.05f)),
-            incoming = PreviewTransitionLayerState(alpha = p, rotationY = 35f * (1f - p), scale = 0.95f + (p * 0.05f))
-        )
-        TransitionType.FOLD -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, rotationY = -80f * p, scale = 1f - (peak * 0.10f)),
-            incoming = PreviewTransitionLayerState(alpha = p, rotationY = 80f * (1f - p), scale = 0.9f + (p * 0.1f))
-        )
-        TransitionType.TUNNEL -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, scale = 1f + (p * 0.45f)),
-            incoming = PreviewTransitionLayerState(alpha = p, scale = 0.55f + (p * 0.45f)),
-            overlayColor = Color.Black,
-            overlayAlpha = peak * 0.15f
-        )
-        TransitionType.PRISM -> PreviewTransitionVisualState(
-            outgoing = PreviewTransitionLayerState(alpha = 1f - p, rotationZ = -10f * peak, scale = 1f + (peak * 0.05f)),
-            incoming = PreviewTransitionLayerState(alpha = p, rotationZ = 10f * (1f - p), scale = 0.92f + (p * 0.08f)),
-            overlayColor = Color(0xFF20D4F5),
-            overlayAlpha = peak * 0.18f
-        )
-        TransitionType.NONE,
-        null -> PreviewTransitionVisualState()
+        }
+        is TransitionSpec.Slide -> {
+            val remaining = 1f - p
+            val incoming = when (spec.direction) {
+                TransitionSpec.SlideDirection.Left ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * remaining)
+                TransitionSpec.SlideDirection.Right ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = -widthPx * remaining)
+                TransitionSpec.SlideDirection.Up ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * remaining)
+                TransitionSpec.SlideDirection.Down ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * remaining)
+            }
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(),
+                incoming = incoming
+            )
+        }
+        is TransitionSpec.Zoom -> {
+            val scaleStart = when (spec.mode) {
+                TransitionSpec.ZoomMode.In -> TransitionSpec.ZOOM_IN_SCALE_START
+                TransitionSpec.ZoomMode.Out -> TransitionSpec.ZOOM_OUT_SCALE_START
+            }
+            val scaleEnd = when (spec.mode) {
+                TransitionSpec.ZoomMode.In -> TransitionSpec.ZOOM_IN_SCALE_END
+                TransitionSpec.ZoomMode.Out -> TransitionSpec.ZOOM_OUT_SCALE_END
+            }
+            val alphaStart = when (spec.mode) {
+                TransitionSpec.ZoomMode.In -> TransitionSpec.ZOOM_IN_ALPHA_START
+                TransitionSpec.ZoomMode.Out -> TransitionSpec.ZOOM_OUT_ALPHA_START
+            }
+            val alphaEnd = when (spec.mode) {
+                TransitionSpec.ZoomMode.In -> TransitionSpec.ZOOM_IN_ALPHA_END
+                TransitionSpec.ZoomMode.Out -> TransitionSpec.ZOOM_OUT_ALPHA_END
+            }
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(),
+                incoming = PreviewTransitionLayerState(
+                    alpha = TransitionSpec.lerp(alphaStart, alphaEnd, p),
+                    scale = TransitionSpec.lerp(scaleStart, scaleEnd, p)
+                )
+            )
+        }
+        TransitionSpec.WhipPanLeft -> {
+            val remaining = 1f - p
+            val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(),
+                incoming = PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * remaining),
+                overlayColor = Color.White,
+                overlayAlpha = peak * 0.10f
+            )
+        }
     }
 }
 
@@ -2067,6 +1949,7 @@ private fun CapCutTimelineEditor(
             displayClips.addAll(clips)
         }
     }
+    val timelineClips: List<ClipUiModel> = if (draggingClipId == null) clips else displayClips
 
     fun clipWidthPx(clip: ClipUiModel): Float = (clip.durationMs * pxPerMs).coerceAtLeast(18f)
 
@@ -2225,12 +2108,12 @@ private fun CapCutTimelineEditor(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Spacer(Modifier.width(playheadTrackLead))
-                            if (displayClips.isEmpty()) {
+                            if (timelineClips.isEmpty()) {
                                 EmptyCapCutClipSlot()
                             } else {
-                                displayClips.forEachIndexed { index, clip ->
+                                timelineClips.forEachIndexed { index, clip ->
                                     key(clip.id) {
-                                        val nextClip = displayClips.getOrNull(index + 1)
+                                        val nextClip = timelineClips.getOrNull(index + 1)
                                         val hasTransition = clip.transition != null && clip.transition.type != TransitionType.NONE
                                         val isSplitBoundary = nextClip != null &&
                                             clip.mediaAssetId == nextClip.mediaAssetId &&
@@ -2293,6 +2176,9 @@ private fun CapCutTimelineEditor(
                                             onReorderStart = {
                                                 dragStartedWhilePlaying = isPlaying
                                                 suppressTimelineDragEnd = true
+                                                if (displayClips.isEmpty()) {
+                                                    displayClips.addAll(clips)
+                                                }
                                                 draggingClipId = clip.id
                                                 draggingOffsetPx = 0f
                                                 insertionIndex = index
@@ -2345,7 +2231,7 @@ private fun CapCutTimelineEditor(
                                             onBoundaryTrimDragged = onSplitBoundaryDragged,
                                             onBoundaryTrimFinished = onSplitBoundaryFinished
                                         )
-                                        if (draggingClipId != null && insertionIndex == displayClips.size && index == displayClips.lastIndex) {
+                                        if (draggingClipId != null && insertionIndex == timelineClips.size && index == timelineClips.lastIndex) {
                                             CapCutInsertionIndicator()
                                         }
                                     }
