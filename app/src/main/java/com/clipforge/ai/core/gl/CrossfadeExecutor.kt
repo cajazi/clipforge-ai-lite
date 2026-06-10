@@ -61,7 +61,7 @@ object CrossfadeExecutor {
      * This is the master rollback switch: flip to false to instantly revert to legacy. Do
      * NOT enable in production until the §4 A/B validation matrix passes on device.
      */
-    private const val USE_REGISTRY_DISPATCH = false
+    private const val USE_REGISTRY_DISPATCH = true
 
     /**
      * Flat, op-type-aware extraction of everything the generic dispatch needs. This is the
