@@ -3,6 +3,9 @@ package com.clipforge.ai.core.transition.renderers
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.transformer.EditedMediaItem
+import com.clipforge.ai.core.gl.CubeBitmapOverlay
+import com.clipforge.ai.core.gl.CubeDirection
+import com.clipforge.ai.core.gl.CubeGlEffect
 import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
 import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
@@ -157,6 +160,28 @@ class RotationTransitionRenderer : TransitionRenderer {
         "ROTATE" -> RotationMode.ROTATE
         "CAMERA_ROLL" -> RotationMode.CAMERA_ROLL
         else -> RotationMode.SPIN
+    }
+}
+
+/** Horizontal Cube L/R. 2.5D approximation: A folds away while cached B expands in. */
+@UnstableApi
+class CubeTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Cube cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val raw = ctx.param(TransitionParamKeys.DIRECTION) ?: "CUBE_LEFT"
+        val direction = cubeDirectionFor(raw)
+        val effect = CubeGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, direction)
+        val overlay = CubeBitmapOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, direction)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect, OverlayEffect(listOf(overlay))))
+    }
+
+    private fun cubeDirectionFor(raw: String): CubeDirection = when (raw.uppercase()) {
+        "CUBE_RIGHT" -> CubeDirection.RIGHT
+        else -> CubeDirection.LEFT
     }
 }
 

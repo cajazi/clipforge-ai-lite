@@ -148,6 +148,16 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.MODE to op.mode)
         )
+        is CrossfadeRenderPlan.Op.Cube -> Dispatch(
+            id = when (op.direction.uppercase()) {
+                "CUBE_RIGHT" -> TransitionRegistrations.CUBE_RIGHT
+                else -> TransitionRegistrations.CUBE_LEFT
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
         is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
@@ -239,6 +249,11 @@ object CrossfadeExecutor {
         else -> RotationMode.SPIN
     }
 
+    private fun cubeDirectionFor(raw: String): CubeDirection = when (raw.uppercase()) {
+        "CUBE_RIGHT" -> CubeDirection.RIGHT
+        else -> CubeDirection.LEFT
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -255,6 +270,8 @@ object CrossfadeExecutor {
                 "op[$index]=ZOOM pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.Rotation ->
                 "op[$index]=ROTATION pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
+            is CrossfadeRenderPlan.Op.Cube ->
+                "op[$index]=CUBE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.WhipPan ->
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
@@ -609,6 +626,54 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "ROTATION_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "ROTATION mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs rotation=[$rotationStartUs..$rotationEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Cube -> {
+                        onStage("Preparing cube transition...")
+                        val cubeStartUs = runningTimeMs * 1000L
+                        val cubeEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val cubeFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "CUBE_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$cubeFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = cubeFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "CUBE_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "CUBE_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Cube cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val direction = cubeDirectionFor(op.direction)
+                        Log.d(TAG, "CUBE_EFFECT_CREATE_BEFORE index=$index direction=$direction window=[$cubeStartUs..$cubeEndUs]")
+                        val cubeEffect = CubeGlEffect(
+                            startTimeUs = cubeStartUs,
+                            endTimeUs = cubeEndUs,
+                            direction = direction
+                        )
+                        val overlay = CubeBitmapOverlay(cache, cubeStartUs, cubeEndUs, direction)
+                        Log.d(TAG, "CUBE_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(cubeEffect, OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "CUBE_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "CUBE dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs cube=[$cubeStartUs..$cubeEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.WhipPan -> {

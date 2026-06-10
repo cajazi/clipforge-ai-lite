@@ -650,6 +650,26 @@ private fun previewTransitionVisualState(
                 )
             )
         }
+        is TransitionSpec.Cube -> {
+            val sign = when (spec.direction) {
+                TransitionSpec.CubeDirection.Left -> -1f
+                TransitionSpec.CubeDirection.Right -> 1f
+            }
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(
+                    alpha = 1f,
+                    translationX = sign * widthPx * 0.38f * p,
+                    scale = TransitionSpec.lerp(1f, 0.86f, p),
+                    rotationY = sign * 72f * p
+                ),
+                incoming = PreviewTransitionLayerState(
+                    alpha = TransitionSpec.lerp(0.82f, 1f, p),
+                    translationX = -sign * widthPx * (1f - p),
+                    scale = TransitionSpec.lerp(0.86f, 1f, p),
+                    rotationY = -sign * 72f * (1f - p)
+                )
+            )
+        }
         is TransitionSpec.WhipPan -> {
             val remaining = 1f - p
             val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)

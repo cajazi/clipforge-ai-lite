@@ -95,6 +95,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, rotationId(op.mode),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.MODE to op.mode),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.Cube ->
+                        results += runOp(context, index, "CUBE", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, cubeId(op.direction),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.WhipPan ->
                         results += runOp(context, index, "WHIP_PAN", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, whipPanId(op.direction),
@@ -135,6 +140,11 @@ object OverlayRendererParityHarness {
         "ROTATE" -> TransitionRegistrations.ROTATE
         "CAMERA_ROLL" -> TransitionRegistrations.CAMERA_ROLL
         else -> TransitionRegistrations.SPIN
+    }
+
+    private fun cubeId(direction: String): TransitionId = when (direction.uppercase()) {
+        "CUBE_RIGHT" -> TransitionRegistrations.CUBE_RIGHT
+        else -> TransitionRegistrations.CUBE_LEFT
     }
 
     private fun motionBlurId(direction: String): TransitionId = when (direction.uppercase()) {

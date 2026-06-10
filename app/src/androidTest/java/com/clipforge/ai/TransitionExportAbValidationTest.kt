@@ -49,6 +49,8 @@ class TransitionExportAbValidationTest {
         Case("Spin", "SPIN"),
         Case("Rotate", "ROTATE"),
         Case("Camera Roll", "CAMERA_ROLL"),
+        Case("Cube Left", "CUBE_LEFT"),
+        Case("Cube Right", "CUBE_RIGHT"),
         Case("Whip Pan Left", "WHIP_PAN_LEFT"),
         Case("Whip Pan Right", "WHIP_PAN_RIGHT"),
         Case("Whip Pan Up", "WHIP_PAN_UP"),

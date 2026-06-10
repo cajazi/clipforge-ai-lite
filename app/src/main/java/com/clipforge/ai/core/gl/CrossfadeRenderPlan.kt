@@ -36,6 +36,8 @@ object CrossfadeRenderPlan {
     private val ZOOM_TYPES = setOf("ZOOM_IN", "ZOOM_OUT")
     // Rotation transitions: A rotates out while B rotates/scales into place.
     private val ROTATION_TYPES = setOf("SPIN", "ROTATE", "CAMERA_ROLL")
+    // Horizontal cube transitions: 2.5D cube turn approximation.
+    private val CUBE_TYPES = setOf("CUBE_LEFT", "CUBE_RIGHT")
     // Phase 0 experimental motion transition: B whips in over a blurred A tail.
     private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT", "WHIP_PAN_RIGHT", "WHIP_PAN_UP", "WHIP_PAN_DOWN")
     // Motion blur transitions: B dissolves in while A's tail is directionally blurred.
@@ -86,6 +88,12 @@ object CrossfadeRenderPlan {
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val mode: String
+        ) : Op()
+        /** Horizontal cube approximation from A into B. */
+        data class Cube(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val direction: String
         ) : Op()
         /** Experimental: blur A's tail while clip B whips in. */
         data class WhipPan(
@@ -177,6 +185,9 @@ object CrossfadeRenderPlan {
             val isRotation = BooleanArray(entries.size)
             val rotationDurArr = LongArray(entries.size)
             val rotationModeArr = arrayOfNulls<String>(entries.size)
+            val isCube = BooleanArray(entries.size)
+            val cubeDurArr = LongArray(entries.size)
+            val cubeDirArr = arrayOfNulls<String>(entries.size)
             val isWhipPan = BooleanArray(entries.size)
             val whipPanDurArr = LongArray(entries.size)
             val whipPanDirArr = arrayOfNulls<String>(entries.size)
@@ -216,6 +227,11 @@ object CrossfadeRenderPlan {
                     rotationModeArr[i] = t
                     rotationDurArr[i] = durMs
                     Log.d(TAG, "boundary $i->${i + 1} plan=ROTATION requestedMs=$durMs mode=$t")
+                } else if (t in CUBE_TYPES && durMs > 0L) {
+                    isCube[i] = true
+                    cubeDirArr[i] = t
+                    cubeDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=CUBE requestedMs=$durMs direction=$t")
                 } else if (t in WHIP_PAN_TYPES && durMs > 0L) {
                     isWhipPan[i] = true
                     whipPanDirArr[i] = t
@@ -238,6 +254,7 @@ object CrossfadeRenderPlan {
                 isPush[i] -> pushDurArr[i]
                 isZoom[i] -> zoomDurArr[i]
                 isRotation[i] -> rotationDurArr[i]
+                isCube[i] -> cubeDurArr[i]
                 isWhipPan[i] -> whipPanDurArr[i]
                 isMotionBlur[i] -> motionBlurDurArr[i]
                 else -> 0L
@@ -251,6 +268,7 @@ object CrossfadeRenderPlan {
                     isPush[i] -> pushDurArr[i] = consumptionMs
                     isZoom[i] -> zoomDurArr[i] = consumptionMs
                     isRotation[i] -> rotationDurArr[i] = consumptionMs
+                    isCube[i] -> cubeDurArr[i] = consumptionMs
                     isWhipPan[i] -> whipPanDurArr[i] = consumptionMs
                     isMotionBlur[i] -> motionBlurDurArr[i] = consumptionMs
                 }
@@ -295,6 +313,7 @@ object CrossfadeRenderPlan {
                     isPush[i] = false
                     isZoom[i] = false
                     isRotation[i] = false
+                    isCube[i] = false
                     isWhipPan[i] = false
                     isMotionBlur[i] = false
                     continue
@@ -308,6 +327,7 @@ object CrossfadeRenderPlan {
                         "push=${isPush[i]} pushDir=${pushDirArr[i]} " +
                         "zoom=${isZoom[i]} zoomMode=${zoomModeArr[i]} " +
                         "rotation=${isRotation[i]} rotationMode=${rotationModeArr[i]} " +
+                        "cube=${isCube[i]} cubeDir=${cubeDirArr[i]} " +
                         "whipPan=${isWhipPan[i]} whipPanDir=${whipPanDirArr[i]} " +
                         "motionBlur=${isMotionBlur[i]} motionBlurDir=${motionBlurDirArr[i]}"
                 )
@@ -321,11 +341,11 @@ object CrossfadeRenderPlan {
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
                 val hasOverlapIncoming = incomingBoundary >= 0 &&
-                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
+                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
                 val outgoingBoundary = i
                 val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
                 val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
-                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
+                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
 
                 // Crossfade/Slide/Zoom are overlap families: the transition op already
                 // renders A's tail and samples B's head, so the surrounding plain clips
@@ -457,6 +477,24 @@ object CrossfadeRenderPlan {
                         )
                     }
                 }
+                // Cube: horizontal 2.5D face turn (overlap-style).
+                if (i < entries.size - 1 && isCube[i]) {
+                    val cMs = cubeDurArr[i]
+                    val next = entries[i + 1]
+                    if (cMs > 0L) {
+                        ops.add(
+                            Op.Cube(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - cMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = cMs,
+                                direction = cubeDirArr[i] ?: "CUBE_LEFT"
+                            )
+                        )
+                    }
+                }
                 // Experimental Whip Pan: B whips in over a blurred A tail.
                 if (i < entries.size - 1 && isWhipPan[i]) {
                     val wMs = whipPanDurArr[i]
@@ -505,6 +543,7 @@ object CrossfadeRenderPlan {
                     is Op.Push -> Log.d(TAG, "[$idx] PUSH dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Zoom -> Log.d(TAG, "[$idx] ZOOM mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Rotation -> Log.d(TAG, "[$idx] ROTATION mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.Cube -> Log.d(TAG, "[$idx] CUBE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.WhipPan -> Log.d(TAG, "[$idx] WHIP_PAN dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.MotionBlur -> Log.d(TAG, "[$idx] MOTION_BLUR dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                 }

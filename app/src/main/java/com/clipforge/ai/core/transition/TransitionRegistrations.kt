@@ -2,6 +2,7 @@ package com.clipforge.ai.core.transition
 
 import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.CubeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.MotionBlurTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.PushTransitionRenderer
@@ -42,6 +43,8 @@ object TransitionRegistrations {
     val SPIN = TransitionId("spin")
     val ROTATE = TransitionId("rotate")
     val CAMERA_ROLL = TransitionId("camera_roll")
+    val CUBE_LEFT = TransitionId("cube_left")
+    val CUBE_RIGHT = TransitionId("cube_right")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
     val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
     val WHIP_PAN_UP = TransitionId("whip_pan_up")
@@ -72,6 +75,8 @@ object TransitionRegistrations {
         TransitionType.SPIN -> SPIN
         TransitionType.ROTATE -> ROTATE
         TransitionType.CAMERA_ROLL -> CAMERA_ROLL
+        TransitionType.CUBE_LEFT -> CUBE_LEFT
+        TransitionType.CUBE_RIGHT -> CUBE_RIGHT
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
         TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
         TransitionType.WHIP_PAN_UP -> WHIP_PAN_UP
@@ -91,6 +96,7 @@ object TransitionRegistrations {
         val push = PushTransitionRenderer()
         val zoom = ZoomTransitionRenderer()
         val rotation = RotationTransitionRenderer()
+        val cube = CubeTransitionRenderer()
         val whip = WhipPanTransitionRenderer()
         val motionBlur = MotionBlurTransitionRenderer()
 
@@ -127,6 +133,7 @@ object TransitionRegistrations {
         val sPush = "Preparing push transition..."
         val sZoom = "Preparing zoom transition..."
         val sRotation = "Preparing rotation transition..."
+        val sCube = "Preparing cube transition..."
         val sWhip = "Preparing whip pan transition..."
         val sMotionBlur = "Preparing motion blur transition..."
 
@@ -146,6 +153,8 @@ object TransitionRegistrations {
         reg(SPIN, "Spin", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(ROTATE, "Rotate", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(CAMERA_ROLL, "Camera Roll", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
+        reg(CUBE_LEFT, "3D Cube Left", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
+        reg(CUBE_RIGHT, "3D Cube Right", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_UP, "Whip Pan Up", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)

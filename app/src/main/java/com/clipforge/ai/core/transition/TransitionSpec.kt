@@ -20,6 +20,7 @@ object TransitionSpec {
         Push,
         Zoom,
         Rotation,
+        Cube,
         WhipPan,
         MotionBlur,
         PlainCut
@@ -46,6 +47,11 @@ object TransitionSpec {
         Spin,
         Rotate,
         CameraRoll
+    }
+
+    enum class CubeDirection {
+        Left,
+        Right
     }
 
     sealed class Spec(
@@ -83,6 +89,10 @@ object TransitionSpec {
         object Rotate : Rotation(RotationMode.Rotate)
         object CameraRoll : Rotation(RotationMode.CameraRoll)
     }
+    sealed class Cube(val direction: CubeDirection) : Spec(Family.Cube, exportable = true) {
+        object Left : Cube(CubeDirection.Left)
+        object Right : Cube(CubeDirection.Right)
+    }
     sealed class WhipPan(val direction: SlideDirection) : Spec(Family.WhipPan, exportable = true) {
         object Left : WhipPan(SlideDirection.Left)
         object Right : WhipPan(SlideDirection.Right)
@@ -118,6 +128,8 @@ object TransitionSpec {
         TransitionType.SPIN -> Rotation.Spin
         TransitionType.ROTATE -> Rotation.Rotate
         TransitionType.CAMERA_ROLL -> Rotation.CameraRoll
+        TransitionType.CUBE_LEFT -> Cube.Left
+        TransitionType.CUBE_RIGHT -> Cube.Right
         TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
         TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
         TransitionType.WHIP_PAN_UP -> WhipPan.Up
