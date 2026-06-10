@@ -137,6 +137,17 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.MODE to op.mode)
         )
+        is CrossfadeRenderPlan.Op.Rotation -> Dispatch(
+            id = when (op.mode.uppercase()) {
+                "ROTATE" -> TransitionRegistrations.ROTATE
+                "CAMERA_ROLL" -> TransitionRegistrations.CAMERA_ROLL
+                else -> TransitionRegistrations.SPIN
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.MODE to op.mode)
+        )
         is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
@@ -222,6 +233,12 @@ object CrossfadeExecutor {
         }
     }
 
+    private fun rotationModeFor(raw: String): RotationMode = when (raw.uppercase()) {
+        "ROTATE" -> RotationMode.ROTATE
+        "CAMERA_ROLL" -> RotationMode.CAMERA_ROLL
+        else -> RotationMode.SPIN
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -236,6 +253,8 @@ object CrossfadeExecutor {
                 "op[$index]=PUSH pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Zoom ->
                 "op[$index]=ZOOM pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
+            is CrossfadeRenderPlan.Op.Rotation ->
+                "op[$index]=ROTATION pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.WhipPan ->
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
@@ -542,6 +561,54 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "ZOOM_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "ZOOM mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs zoom=[$zoomStartUs..$zoomEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Rotation -> {
+                        onStage("Preparing rotation transition...")
+                        val rotationStartUs = runningTimeMs * 1000L
+                        val rotationEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val rotationFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "ROTATION_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$rotationFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = rotationFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "ROTATION_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "ROTATION_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Rotation cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val mode = rotationModeFor(op.mode)
+                        Log.d(TAG, "ROTATION_EFFECT_CREATE_BEFORE index=$index mode=$mode window=[$rotationStartUs..$rotationEndUs]")
+                        val rotationEffect = RotationGlEffect(
+                            startTimeUs = rotationStartUs,
+                            endTimeUs = rotationEndUs,
+                            mode = mode
+                        )
+                        val overlay = RotationBitmapOverlay(cache, rotationStartUs, rotationEndUs, mode)
+                        Log.d(TAG, "ROTATION_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(rotationEffect, OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "ROTATION_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "ROTATION mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs rotation=[$rotationStartUs..$rotationEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.WhipPan -> {

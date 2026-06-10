@@ -34,6 +34,8 @@ object CrossfadeRenderPlan {
     private val PUSH_TYPES = setOf("PUSH_LEFT", "PUSH_RIGHT", "PUSH_UP", "PUSH_DOWN")
     // Zoom transitions: clip B zooms into place over static clip A.
     private val ZOOM_TYPES = setOf("ZOOM_IN", "ZOOM_OUT")
+    // Rotation transitions: A rotates out while B rotates/scales into place.
+    private val ROTATION_TYPES = setOf("SPIN", "ROTATE", "CAMERA_ROLL")
     // Phase 0 experimental motion transition: B whips in over a blurred A tail.
     private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT", "WHIP_PAN_RIGHT", "WHIP_PAN_UP", "WHIP_PAN_DOWN")
     // Motion blur transitions: B dissolves in while A's tail is directionally blurred.
@@ -75,6 +77,12 @@ object CrossfadeRenderPlan {
         ) : Op()
         /** Zoom clip B into place over a static clip A. */
         data class Zoom(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val mode: String
+        ) : Op()
+        /** Rotate A and cached B over the transition window. */
+        data class Rotation(
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val mode: String
@@ -166,6 +174,9 @@ object CrossfadeRenderPlan {
             val isZoom = BooleanArray(entries.size)
             val zoomDurArr = LongArray(entries.size)
             val zoomModeArr = arrayOfNulls<String>(entries.size)
+            val isRotation = BooleanArray(entries.size)
+            val rotationDurArr = LongArray(entries.size)
+            val rotationModeArr = arrayOfNulls<String>(entries.size)
             val isWhipPan = BooleanArray(entries.size)
             val whipPanDurArr = LongArray(entries.size)
             val whipPanDirArr = arrayOfNulls<String>(entries.size)
@@ -200,6 +211,11 @@ object CrossfadeRenderPlan {
                     zoomModeArr[i] = t
                     zoomDurArr[i] = durMs
                     Log.d(TAG, "boundary $i->${i + 1} plan=ZOOM requestedMs=$durMs mode=$t")
+                } else if (t in ROTATION_TYPES && durMs > 0L) {
+                    isRotation[i] = true
+                    rotationModeArr[i] = t
+                    rotationDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=ROTATION requestedMs=$durMs mode=$t")
                 } else if (t in WHIP_PAN_TYPES && durMs > 0L) {
                     isWhipPan[i] = true
                     whipPanDirArr[i] = t
@@ -221,6 +237,7 @@ object CrossfadeRenderPlan {
                 isSlide[i] -> slideDurArr[i]
                 isPush[i] -> pushDurArr[i]
                 isZoom[i] -> zoomDurArr[i]
+                isRotation[i] -> rotationDurArr[i]
                 isWhipPan[i] -> whipPanDurArr[i]
                 isMotionBlur[i] -> motionBlurDurArr[i]
                 else -> 0L
@@ -233,6 +250,7 @@ object CrossfadeRenderPlan {
                     isSlide[i] -> slideDurArr[i] = consumptionMs
                     isPush[i] -> pushDurArr[i] = consumptionMs
                     isZoom[i] -> zoomDurArr[i] = consumptionMs
+                    isRotation[i] -> rotationDurArr[i] = consumptionMs
                     isWhipPan[i] -> whipPanDurArr[i] = consumptionMs
                     isMotionBlur[i] -> motionBlurDurArr[i] = consumptionMs
                 }
@@ -276,6 +294,7 @@ object CrossfadeRenderPlan {
                     isSlide[i] = false
                     isPush[i] = false
                     isZoom[i] = false
+                    isRotation[i] = false
                     isWhipPan[i] = false
                     isMotionBlur[i] = false
                     continue
@@ -288,6 +307,7 @@ object CrossfadeRenderPlan {
                         "dip=${isDip[i]} slide=${isSlide[i]} slideDir=${slideDirArr[i]} " +
                         "push=${isPush[i]} pushDir=${pushDirArr[i]} " +
                         "zoom=${isZoom[i]} zoomMode=${zoomModeArr[i]} " +
+                        "rotation=${isRotation[i]} rotationMode=${rotationModeArr[i]} " +
                         "whipPan=${isWhipPan[i]} whipPanDir=${whipPanDirArr[i]} " +
                         "motionBlur=${isMotionBlur[i]} motionBlurDir=${motionBlurDirArr[i]}"
                 )
@@ -301,11 +321,11 @@ object CrossfadeRenderPlan {
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
                 val hasOverlapIncoming = incomingBoundary >= 0 &&
-                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
+                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
                 val outgoingBoundary = i
                 val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
                 val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
-                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
+                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
 
                 // Crossfade/Slide/Zoom are overlap families: the transition op already
                 // renders A's tail and samples B's head, so the surrounding plain clips
@@ -419,6 +439,24 @@ object CrossfadeRenderPlan {
                         )
                     }
                 }
+                // Rotation: A rotates out while B rotates/scales into place (overlap-style).
+                if (i < entries.size - 1 && isRotation[i]) {
+                    val rMs = rotationDurArr[i]
+                    val next = entries[i + 1]
+                    if (rMs > 0L) {
+                        ops.add(
+                            Op.Rotation(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - rMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = rMs,
+                                mode = rotationModeArr[i] ?: "SPIN"
+                            )
+                        )
+                    }
+                }
                 // Experimental Whip Pan: B whips in over a blurred A tail.
                 if (i < entries.size - 1 && isWhipPan[i]) {
                     val wMs = whipPanDurArr[i]
@@ -466,6 +504,7 @@ object CrossfadeRenderPlan {
                     is Op.Slide -> Log.d(TAG, "[$idx] SLIDE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Push -> Log.d(TAG, "[$idx] PUSH dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Zoom -> Log.d(TAG, "[$idx] ZOOM mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.Rotation -> Log.d(TAG, "[$idx] ROTATION mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.WhipPan -> Log.d(TAG, "[$idx] WHIP_PAN dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.MotionBlur -> Log.d(TAG, "[$idx] MOTION_BLUR dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                 }

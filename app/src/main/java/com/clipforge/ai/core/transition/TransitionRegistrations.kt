@@ -5,6 +5,7 @@ import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.MotionBlurTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.PushTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.RotationTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.SlideTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.WhipPanTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.ZoomTransitionRenderer
@@ -38,6 +39,9 @@ object TransitionRegistrations {
     val PUSH_DOWN = TransitionId("push_down")
     val ZOOM_IN = TransitionId("zoom_in")
     val ZOOM_OUT = TransitionId("zoom_out")
+    val SPIN = TransitionId("spin")
+    val ROTATE = TransitionId("rotate")
+    val CAMERA_ROLL = TransitionId("camera_roll")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
     val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
     val WHIP_PAN_UP = TransitionId("whip_pan_up")
@@ -65,6 +69,9 @@ object TransitionRegistrations {
         TransitionType.PUSH_DOWN -> PUSH_DOWN
         TransitionType.ZOOM_IN -> ZOOM_IN
         TransitionType.ZOOM_OUT -> ZOOM_OUT
+        TransitionType.SPIN -> SPIN
+        TransitionType.ROTATE -> ROTATE
+        TransitionType.CAMERA_ROLL -> CAMERA_ROLL
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
         TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
         TransitionType.WHIP_PAN_UP -> WHIP_PAN_UP
@@ -83,6 +90,7 @@ object TransitionRegistrations {
         val slide = SlideTransitionRenderer()
         val push = PushTransitionRenderer()
         val zoom = ZoomTransitionRenderer()
+        val rotation = RotationTransitionRenderer()
         val whip = WhipPanTransitionRenderer()
         val motionBlur = MotionBlurTransitionRenderer()
 
@@ -118,6 +126,7 @@ object TransitionRegistrations {
         val sSlide = "Preparing slide transition..."
         val sPush = "Preparing push transition..."
         val sZoom = "Preparing zoom transition..."
+        val sRotation = "Preparing rotation transition..."
         val sWhip = "Preparing whip pan transition..."
         val sMotionBlur = "Preparing motion blur transition..."
 
@@ -134,6 +143,9 @@ object TransitionRegistrations {
         reg(PUSH_DOWN, "Push Down", TransitionCategory.MOTION, TimingModel.Overlap, push, sPush)
         reg(ZOOM_IN, "Zoom In", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
         reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
+        reg(SPIN, "Spin", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
+        reg(ROTATE, "Rotate", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
+        reg(CAMERA_ROLL, "Camera Roll", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_UP, "Whip Pan Up", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)

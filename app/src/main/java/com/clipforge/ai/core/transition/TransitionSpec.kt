@@ -19,6 +19,7 @@ object TransitionSpec {
         Slide,
         Push,
         Zoom,
+        Rotation,
         WhipPan,
         MotionBlur,
         PlainCut
@@ -39,6 +40,12 @@ object TransitionSpec {
     enum class ZoomMode {
         In,
         Out
+    }
+
+    enum class RotationMode {
+        Spin,
+        Rotate,
+        CameraRoll
     }
 
     sealed class Spec(
@@ -70,6 +77,11 @@ object TransitionSpec {
     sealed class Zoom(val mode: ZoomMode) : Spec(Family.Zoom, exportable = true) {
         object In : Zoom(ZoomMode.In)
         object Out : Zoom(ZoomMode.Out)
+    }
+    sealed class Rotation(val mode: RotationMode) : Spec(Family.Rotation, exportable = true) {
+        object Spin : Rotation(RotationMode.Spin)
+        object Rotate : Rotation(RotationMode.Rotate)
+        object CameraRoll : Rotation(RotationMode.CameraRoll)
     }
     sealed class WhipPan(val direction: SlideDirection) : Spec(Family.WhipPan, exportable = true) {
         object Left : WhipPan(SlideDirection.Left)
@@ -103,6 +115,9 @@ object TransitionSpec {
         TransitionType.PUSH_DOWN -> Push.Down
         TransitionType.ZOOM_IN -> Zoom.In
         TransitionType.ZOOM_OUT -> Zoom.Out
+        TransitionType.SPIN -> Rotation.Spin
+        TransitionType.ROTATE -> Rotation.Rotate
+        TransitionType.CAMERA_ROLL -> Rotation.CameraRoll
         TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
         TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
         TransitionType.WHIP_PAN_UP -> WhipPan.Up

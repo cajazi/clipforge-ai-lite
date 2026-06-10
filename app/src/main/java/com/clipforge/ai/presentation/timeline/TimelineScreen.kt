@@ -601,6 +601,55 @@ private fun previewTransitionVisualState(
                 )
             )
         }
+        is TransitionSpec.Rotation -> {
+            val outgoingRotation = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin -> -45f * p
+                TransitionSpec.RotationMode.Rotate -> -24f * p
+                TransitionSpec.RotationMode.CameraRoll -> 10f * p
+            }
+            val incomingRotationStart = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin -> 60f
+                TransitionSpec.RotationMode.Rotate -> 24f
+                TransitionSpec.RotationMode.CameraRoll -> -10f
+            }
+            val outgoingScaleStart = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin -> 1.08f
+                TransitionSpec.RotationMode.Rotate -> 1.04f
+                TransitionSpec.RotationMode.CameraRoll -> 1.12f
+            }
+            val outgoingScaleEnd = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin -> 0.94f
+                TransitionSpec.RotationMode.Rotate -> 0.98f
+                TransitionSpec.RotationMode.CameraRoll -> 1.12f
+            }
+            val incomingScaleStart = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin -> 0.84f
+                TransitionSpec.RotationMode.Rotate -> 0.96f
+                TransitionSpec.RotationMode.CameraRoll -> 1.12f
+            }
+            val incomingScaleEnd = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin,
+                TransitionSpec.RotationMode.Rotate -> 1.0f
+                TransitionSpec.RotationMode.CameraRoll -> 1.08f
+            }
+            val incomingAlphaStart = when (spec.mode) {
+                TransitionSpec.RotationMode.Spin -> 0.15f
+                TransitionSpec.RotationMode.Rotate -> 0.2f
+                TransitionSpec.RotationMode.CameraRoll -> 0.25f
+            }
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(
+                    alpha = 1f,
+                    scale = TransitionSpec.lerp(outgoingScaleStart, outgoingScaleEnd, p),
+                    rotationZ = outgoingRotation
+                ),
+                incoming = PreviewTransitionLayerState(
+                    alpha = TransitionSpec.lerp(incomingAlphaStart, 1f, p),
+                    scale = TransitionSpec.lerp(incomingScaleStart, incomingScaleEnd, p),
+                    rotationZ = incomingRotationStart * (1f - p)
+                )
+            )
+        }
         is TransitionSpec.WhipPan -> {
             val remaining = 1f - p
             val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)

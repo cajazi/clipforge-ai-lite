@@ -90,6 +90,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, TransitionRegistrations.ZOOM_IN,
                             expectedItems = 1, params = mapOf(TransitionParamKeys.MODE to op.mode),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.Rotation ->
+                        results += runOp(context, index, "ROTATION", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, rotationId(op.mode),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.MODE to op.mode),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.WhipPan ->
                         results += runOp(context, index, "WHIP_PAN", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, whipPanId(op.direction),
@@ -124,6 +129,12 @@ object OverlayRendererParityHarness {
         "PUSH_UP" -> TransitionRegistrations.PUSH_UP
         "PUSH_DOWN" -> TransitionRegistrations.PUSH_DOWN
         else -> TransitionRegistrations.PUSH_LEFT
+    }
+
+    private fun rotationId(mode: String): TransitionId = when (mode.uppercase()) {
+        "ROTATE" -> TransitionRegistrations.ROTATE
+        "CAMERA_ROLL" -> TransitionRegistrations.CAMERA_ROLL
+        else -> TransitionRegistrations.SPIN
     }
 
     private fun motionBlurId(direction: String): TransitionId = when (direction.uppercase()) {

@@ -7,6 +7,9 @@ import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
 import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
 import com.clipforge.ai.core.gl.PushGlEffect
+import com.clipforge.ai.core.gl.RotationBitmapOverlay
+import com.clipforge.ai.core.gl.RotationGlEffect
+import com.clipforge.ai.core.gl.RotationMode
 import com.clipforge.ai.core.gl.SlideOverlay
 import com.clipforge.ai.core.gl.ZoomOverlay
 import com.clipforge.ai.core.transition.SegmentContext
@@ -131,6 +134,29 @@ class ZoomTransitionRenderer : TransitionRenderer {
         val mode = ZoomOverlay.Mode.valueOf(raw.removePrefix("ZOOM_"))
         val overlay = ZoomOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, mode)
         return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, OverlayEffect(listOf(overlay))))
+    }
+}
+
+/** Spin / Rotate / Camera Roll. Rotates A with GL and rotates/scales cached B as overlay. */
+@UnstableApi
+class RotationTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Rotation cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val raw = ctx.param(TransitionParamKeys.MODE) ?: "SPIN"
+        val mode = rotationModeFor(raw)
+        val effect = RotationGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, mode)
+        val overlay = RotationBitmapOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, mode)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect, OverlayEffect(listOf(overlay))))
+    }
+
+    private fun rotationModeFor(raw: String): RotationMode = when (raw.uppercase()) {
+        "ROTATE" -> RotationMode.ROTATE
+        "CAMERA_ROLL" -> RotationMode.CAMERA_ROLL
+        else -> RotationMode.SPIN
     }
 }
 
