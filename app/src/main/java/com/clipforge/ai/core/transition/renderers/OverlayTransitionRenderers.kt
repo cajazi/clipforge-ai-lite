@@ -9,6 +9,9 @@ import com.clipforge.ai.core.gl.CubeGlEffect
 import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
 import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
+import com.clipforge.ai.core.gl.FlipBitmapOverlay
+import com.clipforge.ai.core.gl.FlipDirection
+import com.clipforge.ai.core.gl.FlipGlEffect
 import com.clipforge.ai.core.gl.PushGlEffect
 import com.clipforge.ai.core.gl.RotationBitmapOverlay
 import com.clipforge.ai.core.gl.RotationGlEffect
@@ -182,6 +185,30 @@ class CubeTransitionRenderer : TransitionRenderer {
     private fun cubeDirectionFor(raw: String): CubeDirection = when (raw.uppercase()) {
         "CUBE_RIGHT" -> CubeDirection.RIGHT
         else -> CubeDirection.LEFT
+    }
+}
+
+/** Flip L/R/U/D. Center-pivot card flip: A rotates out, cached B appears after midpoint. */
+@UnstableApi
+class FlipTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Flip cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val raw = ctx.param(TransitionParamKeys.DIRECTION) ?: "FLIP_LEFT"
+        val direction = flipDirectionFor(raw)
+        val effect = FlipGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, direction)
+        val overlay = FlipBitmapOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, direction)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect, OverlayEffect(listOf(overlay))))
+    }
+
+    private fun flipDirectionFor(raw: String): FlipDirection = when (raw.uppercase()) {
+        "FLIP_RIGHT" -> FlipDirection.RIGHT
+        "FLIP_UP" -> FlipDirection.UP
+        "FLIP_DOWN" -> FlipDirection.DOWN
+        else -> FlipDirection.LEFT
     }
 }
 

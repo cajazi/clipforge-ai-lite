@@ -491,7 +491,8 @@ private data class PreviewTransitionLayerState(
     val translationY: Float = 0f,
     val scale: Float = 1f,
     val rotationZ: Float = 0f,
-    val rotationY: Float = 0f
+    val rotationY: Float = 0f,
+    val rotationX: Float = 0f
 )
 
 private data class PreviewTransitionVisualState(
@@ -667,6 +668,32 @@ private fun previewTransitionVisualState(
                     translationX = -sign * widthPx * (1f - p),
                     scale = TransitionSpec.lerp(0.86f, 1f, p),
                     rotationY = -sign * 72f * (1f - p)
+                )
+            )
+        }
+        is TransitionSpec.Flip -> {
+            val horizontal = spec.direction == TransitionSpec.FlipDirection.Left ||
+                spec.direction == TransitionSpec.FlipDirection.Right
+            val sign = when (spec.direction) {
+                TransitionSpec.FlipDirection.Left,
+                TransitionSpec.FlipDirection.Up -> -1f
+                TransitionSpec.FlipDirection.Right,
+                TransitionSpec.FlipDirection.Down -> 1f
+            }
+            val revealRaw = ((p - 0.5f) * 2f).coerceIn(0f, 1f)
+            val reveal = TransitionSpec.smoothstep(revealRaw)
+            val edgeScale = TransitionSpec.lerp(0.04f, 1f, reveal)
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(
+                    alpha = if (p < 0.5f) 1f else 0f,
+                    rotationY = if (horizontal) sign * 90f * p.coerceAtMost(0.5f) * 2f else 0f,
+                    rotationX = if (horizontal) 0f else sign * 90f * p.coerceAtMost(0.5f) * 2f
+                ),
+                incoming = PreviewTransitionLayerState(
+                    alpha = if (p >= 0.5f) 1f else 0f,
+                    scale = edgeScale,
+                    rotationY = 0f,
+                    rotationX = 0f
                 )
             )
         }
@@ -861,6 +888,7 @@ private fun CapCutPreviewArea(
                         scaleY = outgoingState.scale
                         rotationZ = outgoingState.rotationZ
                         rotationY = outgoingState.rotationY
+                        rotationX = outgoingState.rotationX
                         cameraDistance = 12f * density.density
                     }
                     .zIndex(1f),
@@ -920,6 +948,7 @@ private fun CapCutPreviewArea(
                             scaleY = incomingState.scale
                             rotationZ = incomingState.rotationZ
                             rotationY = incomingState.rotationY
+                            rotationX = incomingState.rotationX
                             cameraDistance = 12f * density.density
                         }
                         .zIndex(2f)
@@ -1021,6 +1050,10 @@ private fun TransitionPreviewOverlay(
             TransitionType.ZOOM_OUT,
             TransitionType.BLUR,
             TransitionType.SPIN,
+            TransitionType.FLIP_LEFT,
+            TransitionType.FLIP_RIGHT,
+            TransitionType.FLIP_UP,
+            TransitionType.FLIP_DOWN,
             TransitionType.FLASH,
             TransitionType.WIPE,
             TransitionType.SLIDE_UP,
@@ -3536,6 +3569,10 @@ private fun CapCutTransitionPanel(
             TransitionType.POP,
             TransitionType.CUBE_LEFT,
             TransitionType.CUBE_RIGHT,
+            TransitionType.FLIP_LEFT,
+            TransitionType.FLIP_RIGHT,
+            TransitionType.FLIP_UP,
+            TransitionType.FLIP_DOWN,
             TransitionType.FLIP_HORIZONTAL,
             TransitionType.FLIP_VERTICAL,
             TransitionType.DOOR_OPEN,
@@ -3577,6 +3614,10 @@ private fun CapCutTransitionPanel(
             "3D" -> listOf(
                 TransitionType.CUBE_LEFT,
                 TransitionType.CUBE_RIGHT,
+                TransitionType.FLIP_LEFT,
+                TransitionType.FLIP_RIGHT,
+                TransitionType.FLIP_UP,
+                TransitionType.FLIP_DOWN,
                 TransitionType.FLIP_HORIZONTAL,
                 TransitionType.FLIP_VERTICAL,
                 TransitionType.DOOR_OPEN,
@@ -3838,6 +3879,10 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CHROMATIC_ABERRATION -> "CA"
     TransitionType.CUBE_LEFT -> "3L"
     TransitionType.CUBE_RIGHT -> "3R"
+    TransitionType.FLIP_LEFT -> "FL"
+    TransitionType.FLIP_RIGHT -> "FR"
+    TransitionType.FLIP_UP -> "FU"
+    TransitionType.FLIP_DOWN -> "FD"
     TransitionType.FLIP_HORIZONTAL -> "FH"
     TransitionType.FLIP_VERTICAL -> "FV"
     TransitionType.DOOR_OPEN -> "DO"
@@ -3893,6 +3938,10 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.MIRROR_FLIP,
     TransitionType.CUBE_LEFT,
     TransitionType.CUBE_RIGHT,
+    TransitionType.FLIP_LEFT,
+    TransitionType.FLIP_RIGHT,
+    TransitionType.FLIP_UP,
+    TransitionType.FLIP_DOWN,
     TransitionType.FLIP_HORIZONTAL,
     TransitionType.FLIP_VERTICAL,
     TransitionType.DOOR_OPEN,

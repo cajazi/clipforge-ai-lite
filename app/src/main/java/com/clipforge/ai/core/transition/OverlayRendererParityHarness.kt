@@ -100,6 +100,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, cubeId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.Flip ->
+                        results += runOp(context, index, "FLIP", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, flipId(op.direction),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.WhipPan ->
                         results += runOp(context, index, "WHIP_PAN", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, whipPanId(op.direction),
@@ -145,6 +150,13 @@ object OverlayRendererParityHarness {
     private fun cubeId(direction: String): TransitionId = when (direction.uppercase()) {
         "CUBE_RIGHT" -> TransitionRegistrations.CUBE_RIGHT
         else -> TransitionRegistrations.CUBE_LEFT
+    }
+
+    private fun flipId(direction: String): TransitionId = when (direction.uppercase()) {
+        "FLIP_RIGHT" -> TransitionRegistrations.FLIP_RIGHT
+        "FLIP_UP" -> TransitionRegistrations.FLIP_UP
+        "FLIP_DOWN" -> TransitionRegistrations.FLIP_DOWN
+        else -> TransitionRegistrations.FLIP_LEFT
     }
 
     private fun motionBlurId(direction: String): TransitionId = when (direction.uppercase()) {

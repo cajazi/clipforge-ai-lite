@@ -4,6 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.CubeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.FlipTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.MotionBlurTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.PushTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.RotationTransitionRenderer
@@ -45,6 +46,10 @@ object TransitionRegistrations {
     val CAMERA_ROLL = TransitionId("camera_roll")
     val CUBE_LEFT = TransitionId("cube_left")
     val CUBE_RIGHT = TransitionId("cube_right")
+    val FLIP_LEFT = TransitionId("flip_left")
+    val FLIP_RIGHT = TransitionId("flip_right")
+    val FLIP_UP = TransitionId("flip_up")
+    val FLIP_DOWN = TransitionId("flip_down")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
     val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
     val WHIP_PAN_UP = TransitionId("whip_pan_up")
@@ -77,6 +82,10 @@ object TransitionRegistrations {
         TransitionType.CAMERA_ROLL -> CAMERA_ROLL
         TransitionType.CUBE_LEFT -> CUBE_LEFT
         TransitionType.CUBE_RIGHT -> CUBE_RIGHT
+        TransitionType.FLIP_LEFT -> FLIP_LEFT
+        TransitionType.FLIP_RIGHT -> FLIP_RIGHT
+        TransitionType.FLIP_UP -> FLIP_UP
+        TransitionType.FLIP_DOWN -> FLIP_DOWN
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
         TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
         TransitionType.WHIP_PAN_UP -> WHIP_PAN_UP
@@ -97,6 +106,7 @@ object TransitionRegistrations {
         val zoom = ZoomTransitionRenderer()
         val rotation = RotationTransitionRenderer()
         val cube = CubeTransitionRenderer()
+        val flip = FlipTransitionRenderer()
         val whip = WhipPanTransitionRenderer()
         val motionBlur = MotionBlurTransitionRenderer()
 
@@ -134,6 +144,7 @@ object TransitionRegistrations {
         val sZoom = "Preparing zoom transition..."
         val sRotation = "Preparing rotation transition..."
         val sCube = "Preparing cube transition..."
+        val sFlip = "Preparing flip transition..."
         val sWhip = "Preparing whip pan transition..."
         val sMotionBlur = "Preparing motion blur transition..."
 
@@ -155,6 +166,10 @@ object TransitionRegistrations {
         reg(CAMERA_ROLL, "Camera Roll", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(CUBE_LEFT, "3D Cube Left", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
         reg(CUBE_RIGHT, "3D Cube Right", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
+        reg(FLIP_LEFT, "Flip Left", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
+        reg(FLIP_RIGHT, "Flip Right", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
+        reg(FLIP_UP, "Flip Up", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
+        reg(FLIP_DOWN, "Flip Down", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_UP, "Whip Pan Up", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)

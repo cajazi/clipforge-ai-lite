@@ -158,6 +158,18 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
+        is CrossfadeRenderPlan.Op.Flip -> Dispatch(
+            id = when (op.direction.uppercase()) {
+                "FLIP_RIGHT" -> TransitionRegistrations.FLIP_RIGHT
+                "FLIP_UP" -> TransitionRegistrations.FLIP_UP
+                "FLIP_DOWN" -> TransitionRegistrations.FLIP_DOWN
+                else -> TransitionRegistrations.FLIP_LEFT
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
         is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
@@ -254,6 +266,13 @@ object CrossfadeExecutor {
         else -> CubeDirection.LEFT
     }
 
+    private fun flipDirectionFor(raw: String): FlipDirection = when (raw.uppercase()) {
+        "FLIP_RIGHT" -> FlipDirection.RIGHT
+        "FLIP_UP" -> FlipDirection.UP
+        "FLIP_DOWN" -> FlipDirection.DOWN
+        else -> FlipDirection.LEFT
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -272,6 +291,8 @@ object CrossfadeExecutor {
                 "op[$index]=ROTATION pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.Cube ->
                 "op[$index]=CUBE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
+            is CrossfadeRenderPlan.Op.Flip ->
+                "op[$index]=FLIP pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.WhipPan ->
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
@@ -674,6 +695,54 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "CUBE_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "CUBE dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs cube=[$cubeStartUs..$cubeEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Flip -> {
+                        onStage("Preparing flip transition...")
+                        val flipStartUs = runningTimeMs * 1000L
+                        val flipEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val flipFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "FLIP_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$flipFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = flipFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "FLIP_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "FLIP_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Flip cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val direction = flipDirectionFor(op.direction)
+                        Log.d(TAG, "FLIP_EFFECT_CREATE_BEFORE index=$index direction=$direction window=[$flipStartUs..$flipEndUs]")
+                        val flipEffect = FlipGlEffect(
+                            startTimeUs = flipStartUs,
+                            endTimeUs = flipEndUs,
+                            direction = direction
+                        )
+                        val overlay = FlipBitmapOverlay(cache, flipStartUs, flipEndUs, direction)
+                        Log.d(TAG, "FLIP_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(flipEffect, OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "FLIP_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "FLIP dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs flip=[$flipStartUs..$flipEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.WhipPan -> {
