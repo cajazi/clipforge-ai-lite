@@ -68,6 +68,7 @@ object TransitionRegistrations {
             category: TransitionCategory,
             timing: TimingModel,
             renderer: com.clipforge.ai.core.transition.TransitionRenderer,
+            stageMessage: String,
             easing: Easing = Easing.Smoothstep
         ) {
             registry.register(
@@ -78,6 +79,7 @@ object TransitionRegistrations {
                         category = category,
                         timingModel = timing,
                         easing = easing,
+                        stageMessage = stageMessage,
                         isExportable = true
                     ),
                     renderer = renderer,
@@ -86,16 +88,23 @@ object TransitionRegistrations {
             )
         }
 
-        reg(DISSOLVE, "Dissolve", TransitionCategory.DISSOLVE, TimingModel.Overlap, crossfade)
-        reg(FADE_BLACK, "Fade Black", TransitionCategory.FADE, TimingModel.SequentialDip, dip)
-        reg(FADE_WHITE, "Fade White", TransitionCategory.FADE, TimingModel.SequentialDip, dip)
-        reg(SLIDE_LEFT, "Slide Left", TransitionCategory.MOTION, TimingModel.Overlap, slide)
-        reg(SLIDE_RIGHT, "Slide Right", TransitionCategory.MOTION, TimingModel.Overlap, slide)
-        reg(SLIDE_UP, "Slide Up", TransitionCategory.MOTION, TimingModel.Overlap, slide)
-        reg(SLIDE_DOWN, "Slide Down", TransitionCategory.MOTION, TimingModel.Overlap, slide)
-        reg(ZOOM_IN, "Zoom In", TransitionCategory.MOTION, TimingModel.Overlap, zoom)
-        reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom)
-        reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, Easing.ExpoOut)
-        reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, Easing.ExpoOut)
+        // stageMessage strings mirror the legacy CrossfadeExecutor onStage(...) text exactly.
+        val sDissolve = "Preparing dissolve transition..."
+        val sFade = "Preparing fade transition..."
+        val sSlide = "Preparing slide transition..."
+        val sZoom = "Preparing zoom transition..."
+        val sWhip = "Preparing whip pan transition..."
+
+        reg(DISSOLVE, "Dissolve", TransitionCategory.DISSOLVE, TimingModel.Overlap, crossfade, sDissolve)
+        reg(FADE_BLACK, "Fade Black", TransitionCategory.FADE, TimingModel.SequentialDip, dip, sFade)
+        reg(FADE_WHITE, "Fade White", TransitionCategory.FADE, TimingModel.SequentialDip, dip, sFade)
+        reg(SLIDE_LEFT, "Slide Left", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
+        reg(SLIDE_RIGHT, "Slide Right", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
+        reg(SLIDE_UP, "Slide Up", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
+        reg(SLIDE_DOWN, "Slide Down", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
+        reg(ZOOM_IN, "Zoom In", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
+        reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
+        reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
+        reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
     }
 }

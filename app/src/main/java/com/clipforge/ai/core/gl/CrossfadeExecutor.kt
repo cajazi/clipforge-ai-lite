@@ -19,6 +19,11 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.clipforge.ai.core.transition.SegmentContext
+import com.clipforge.ai.core.transition.TransitionId
+import com.clipforge.ai.core.transition.TransitionRegistrations
+import com.clipforge.ai.core.transition.TransitionRegistry
+import com.clipforge.ai.core.transition.renderers.TransitionParamKeys
 import com.clipforge.ai.data.local.database.ClipForgeDatabase
 import com.clipforge.ai.domain.model.AspectRatio
 import com.clipforge.ai.domain.model.ExportQuality
@@ -45,6 +50,90 @@ object CrossfadeExecutor {
 
     private const val TAG = "CROSSFADE_EXEC"
     private val REAL_CROSSFADE_TYPES = setOf("DISSOLVE", "CROSS_DISSOLVE")
+
+    /**
+     * PHASE D EXECUTOR FLIP — registry-driven transition dispatch.
+     *
+     * When false (default), every transition op is built by the legacy per-family `when`
+     * arms below — fully retained, zero behavior change. When true, transition ops are
+     * dispatched through TransitionRegistry instead (PlainClip always stays legacy/inline).
+     *
+     * This is the master rollback switch: flip to false to instantly revert to legacy. Do
+     * NOT enable in production until the §4 A/B validation matrix passes on device.
+     */
+    private const val USE_REGISTRY_DISPATCH = false
+
+    /**
+     * Flat, op-type-aware extraction of everything the generic dispatch needs. This is the
+     * ONLY place that knows the concrete Op subtypes — it returns DATA, never build logic,
+     * so the dispatch site stays open/closed. Returns null for PlainClip (always legacy).
+     *
+     * occupiedMs == composition time the op advances runningTimeMs by == the FULL transition
+     * duration for every family (overlap = duration; dip = half*2). runningTimeMs ownership
+     * therefore stays entirely with the executor.
+     */
+    private data class Dispatch(
+        val id: TransitionId,
+        val pathA: String,
+        val aTailStartMs: Long,
+        val aEndMs: Long,
+        val pathB: String,
+        val bHeadStartMs: Long,
+        val windowDurationMs: Long,
+        val occupiedMs: Long,
+        val params: Map<String, String>
+    )
+
+    private fun dispatchFor(op: CrossfadeRenderPlan.Op): Dispatch? = when (op) {
+        is CrossfadeRenderPlan.Op.PlainClip -> null
+        is CrossfadeRenderPlan.Op.Crossfade -> Dispatch(
+            id = TransitionRegistrations.DISSOLVE,
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.crossfadeMs, occupiedMs = op.crossfadeMs,
+            params = emptyMap()
+        )
+        is CrossfadeRenderPlan.Op.DipToColor -> Dispatch(
+            id = if (op.colorInt == android.graphics.Color.WHITE) TransitionRegistrations.FADE_WHITE
+            else TransitionRegistrations.FADE_BLACK,
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.halfDurationMs * 2L, occupiedMs = op.halfDurationMs * 2L,
+            params = mapOf(
+                TransitionParamKeys.HALF_DURATION_MS to op.halfDurationMs.toString(),
+                TransitionParamKeys.COLOR_INT to op.colorInt.toString(),
+                TransitionParamKeys.B_HEAD_END_MS to op.bHeadEndMs.toString()
+            )
+        )
+        is CrossfadeRenderPlan.Op.Slide -> Dispatch(
+            id = when (op.direction.uppercase()) {
+                "SLIDE_RIGHT" -> TransitionRegistrations.SLIDE_RIGHT
+                "SLIDE_UP" -> TransitionRegistrations.SLIDE_UP
+                "SLIDE_DOWN" -> TransitionRegistrations.SLIDE_DOWN
+                else -> TransitionRegistrations.SLIDE_LEFT
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
+        is CrossfadeRenderPlan.Op.Zoom -> Dispatch(
+            id = if (op.mode.uppercase() == "ZOOM_OUT") TransitionRegistrations.ZOOM_OUT
+            else TransitionRegistrations.ZOOM_IN,
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.MODE to op.mode)
+        )
+        is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
+            id = if (op.direction.uppercase() == "WHIP_PAN_RIGHT") TransitionRegistrations.WHIP_PAN_RIGHT
+            else TransitionRegistrations.WHIP_PAN_LEFT,
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
+    }
 
     sealed class Result {
         data class Done(val outputPath: String, val bytes: Long, val durationMs: Long) : Result()
@@ -154,14 +243,43 @@ object CrossfadeExecutor {
         data class BuiltItem(val item: EditedMediaItem)
         val items = ArrayList<EditedMediaItem>()
         val caches = ArrayList<CrossfadeFrameCache>()
+        // Phase D: cleanup lambdas registered by registry-dispatched renderers (e.g. cache
+        // release). Empty and unused when USE_REGISTRY_DISPATCH is false.
+        val dispatchCleanups = ArrayList<() -> Unit>()
         var runningTimeMs = 0L
+
+        if (USE_REGISTRY_DISPATCH) TransitionRegistrations.registerBuiltIns()
 
         onStage("Preparing transitions...")
         withContext(Dispatchers.IO) {
             for ((index, op) in ops.withIndex()) {
                 Log.d(TAG, "BUILD_ITEM_BEFORE ${describeOp(index, op)} runningTimeMs=$runningTimeMs thread=${Thread.currentThread().name}")
                 try {
-                    when (op) {
+                    val dispatch = if (USE_REGISTRY_DISPATCH) dispatchFor(op) else null
+                    if (dispatch != null) {
+                        val reg = TransitionRegistry.get(dispatch.id)
+                            ?: throw IllegalStateException("no registry entry for ${dispatch.id} (op index=$index)")
+                        val renderer = reg.renderer
+                            ?: throw IllegalStateException("no renderer for ${dispatch.id} (op index=$index)")
+                        onStage(reg.descriptor.stageMessage)
+                        val ctx = SegmentContext(
+                            context = context,
+                            outputWidthPx = outW,
+                            outputHeightPx = outH,
+                            pathA = dispatch.pathA,
+                            aTailStartMs = dispatch.aTailStartMs,
+                            aEndMs = dispatch.aEndMs,
+                            pathB = dispatch.pathB,
+                            bHeadStartMs = dispatch.bHeadStartMs,
+                            durationMs = dispatch.windowDurationMs,
+                            compositionStartUs = runningTimeMs * 1000L,
+                            params = dispatch.params
+                        )
+                        Log.d(TAG, "DISPATCH index=$index id=${dispatch.id} @t=$runningTimeMs windowMs=${dispatch.windowDurationMs} occupiedMs=${dispatch.occupiedMs} params=${dispatch.params}")
+                        val emitted = renderer.emit(ctx) { dispatchCleanups.add(it) }
+                        items.addAll(emitted)
+                        runningTimeMs += dispatch.occupiedMs
+                    } else when (op) {
                     is CrossfadeRenderPlan.Op.PlainClip -> {
                         val durMs = (op.endMs - op.startMs).coerceAtLeast(0L)
                         Log.d(TAG, "PLAIN_ITEM_CREATE_BEFORE index=$index durMs=$durMs")
@@ -395,6 +513,7 @@ object CrossfadeExecutor {
 
         if (items.isEmpty()) {
             caches.forEach { it.release() }
+            dispatchCleanups.forEach { runCatching { it() } }
             onResult(Result.Error("no items built from plan"))
             return
         }
@@ -413,7 +532,10 @@ object CrossfadeExecutor {
 
         val mainHandler = Handler(Looper.getMainLooper())
 
-        fun releaseCaches() { caches.forEach { try { it.release() } catch (_: Exception) {} } }
+        fun releaseCaches() {
+            caches.forEach { try { it.release() } catch (_: Exception) {} }
+            dispatchCleanups.forEach { runCatching { it() } }
+        }
 
         Log.d(TAG, "TRANSFORMER_CREATE_BEFORE")
         val transformer = Transformer.Builder(context)

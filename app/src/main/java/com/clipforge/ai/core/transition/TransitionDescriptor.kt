@@ -27,6 +27,8 @@ data class TransitionDescriptor(
     val timingModel: TimingModel,
     val defaultDurationMs: Long = 500L,
     val easing: Easing = Easing.Smoothstep,
+    /** Exact onStage(...) text shown during export prep; preserves the legacy executor strings. */
+    val stageMessage: String = "",
     val isExportable: Boolean = true,
     val isPremium: Boolean = false
 ) {
