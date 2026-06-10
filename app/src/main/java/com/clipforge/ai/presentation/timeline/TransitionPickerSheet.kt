@@ -66,6 +66,10 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.ZOOM_OUT -> "-"
     TransitionType.BLUR -> "~"
     TransitionType.MOTION_BLUR -> "MB"
+    TransitionType.MOTION_BLUR_LEFT -> "M<"
+    TransitionType.MOTION_BLUR_RIGHT -> "M>"
+    TransitionType.MOTION_BLUR_UP -> "M^"
+    TransitionType.MOTION_BLUR_DOWN -> "Mv"
     TransitionType.GAUSSIAN_BLUR -> "GB"
     TransitionType.SPIN -> "@"
     TransitionType.ROTATE -> "R"
@@ -162,6 +166,10 @@ private val ZOOM_TYPES = listOf(
 private val BLUR_TYPES = listOf(
     TransitionType.BLUR,
     TransitionType.MOTION_BLUR,
+    TransitionType.MOTION_BLUR_LEFT,
+    TransitionType.MOTION_BLUR_RIGHT,
+    TransitionType.MOTION_BLUR_UP,
+    TransitionType.MOTION_BLUR_DOWN,
     TransitionType.GAUSSIAN_BLUR
 )
 private val GLITCH_TYPES = listOf(

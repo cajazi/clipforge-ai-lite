@@ -594,6 +594,15 @@ private fun previewTransitionVisualState(
                 overlayAlpha = peak * 0.10f
             )
         }
+        is TransitionSpec.MotionBlur -> {
+            val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(),
+                incoming = PreviewTransitionLayerState(alpha = p),
+                overlayColor = Color.White,
+                overlayAlpha = peak * 0.06f
+            )
+        }
     }
 }
 
@@ -3408,6 +3417,10 @@ private fun CapCutTransitionPanel(
             TransitionType.ZOOM_OUT,
             TransitionType.BLUR,
             TransitionType.MOTION_BLUR,
+            TransitionType.MOTION_BLUR_LEFT,
+            TransitionType.MOTION_BLUR_RIGHT,
+            TransitionType.MOTION_BLUR_UP,
+            TransitionType.MOTION_BLUR_DOWN,
             TransitionType.GAUSSIAN_BLUR,
             TransitionType.GLITCH,
             TransitionType.RGB_SPLIT,
@@ -3445,7 +3458,15 @@ private fun CapCutTransitionPanel(
             "Slide" -> listOf(TransitionType.SLIDE_LEFT, TransitionType.SLIDE_RIGHT, TransitionType.SLIDE_UP, TransitionType.SLIDE_DOWN)
             "Push" -> listOf(TransitionType.PUSH_LEFT, TransitionType.PUSH_RIGHT, TransitionType.PUSH_UP, TransitionType.PUSH_DOWN)
             "Zoom" -> listOf(TransitionType.ZOOM_IN, TransitionType.ZOOM_OUT)
-            "Blur" -> listOf(TransitionType.BLUR, TransitionType.MOTION_BLUR, TransitionType.GAUSSIAN_BLUR)
+            "Blur" -> listOf(
+                TransitionType.BLUR,
+                TransitionType.MOTION_BLUR,
+                TransitionType.MOTION_BLUR_LEFT,
+                TransitionType.MOTION_BLUR_RIGHT,
+                TransitionType.MOTION_BLUR_UP,
+                TransitionType.MOTION_BLUR_DOWN,
+                TransitionType.GAUSSIAN_BLUR
+            )
             "Glitch" -> listOf(TransitionType.GLITCH, TransitionType.RGB_SPLIT, TransitionType.CHROMATIC_ABERRATION)
             "Camera" -> listOf(
                 TransitionType.SPIN,
@@ -3701,6 +3722,10 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.MIRROR_FLIP -> "M"
     TransitionType.GLITCH -> "G"
     TransitionType.MOTION_BLUR -> "MB"
+    TransitionType.MOTION_BLUR_LEFT -> "M<"
+    TransitionType.MOTION_BLUR_RIGHT -> "M>"
+    TransitionType.MOTION_BLUR_UP -> "M^"
+    TransitionType.MOTION_BLUR_DOWN -> "Mv"
     TransitionType.GAUSSIAN_BLUR -> "GB"
     TransitionType.ROTATE -> "R"
     TransitionType.CAMERA_ROLL -> "CR"
@@ -3750,6 +3775,10 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.POP -> Brush.linearGradient(listOf(Color(0xFFFFF176), Color(0xFF26262A)))
     TransitionType.BLUR,
     TransitionType.MOTION_BLUR,
+    TransitionType.MOTION_BLUR_LEFT,
+    TransitionType.MOTION_BLUR_RIGHT,
+    TransitionType.MOTION_BLUR_UP,
+    TransitionType.MOTION_BLUR_DOWN,
     TransitionType.GAUSSIAN_BLUR -> Brush.linearGradient(listOf(Color(0xFF8B93A7), Color(0xFF242428)))
     TransitionType.SPIN,
     TransitionType.ROTATE,

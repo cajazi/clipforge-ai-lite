@@ -1,7 +1,11 @@
 package com.clipforge.ai
 
 import android.content.Context
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
@@ -41,7 +45,11 @@ class TransitionExportAbValidationTest {
         Case("Whip Pan Left", "WHIP_PAN_LEFT"),
         Case("Whip Pan Right", "WHIP_PAN_RIGHT"),
         Case("Whip Pan Up", "WHIP_PAN_UP"),
-        Case("Whip Pan Down", "WHIP_PAN_DOWN")
+        Case("Whip Pan Down", "WHIP_PAN_DOWN"),
+        Case("Motion Blur Left", "MOTION_BLUR_LEFT"),
+        Case("Motion Blur Right", "MOTION_BLUR_RIGHT"),
+        Case("Motion Blur Up", "MOTION_BLUR_UP"),
+        Case("Motion Blur Down", "MOTION_BLUR_DOWN")
     )
 
     @Test
@@ -77,15 +85,108 @@ class TransitionExportAbValidationTest {
 
     private fun seedPath(context: Context): String {
         val mediaDir = File(context.filesDir, "media")
+        mediaDir.mkdirs()
         val candidates = mediaDir
             .listFiles { file -> file.isFile && file.extension.equals("mp4", ignoreCase = true) }
             .orEmpty()
             .sortedBy { it.name }
+        val existing = candidates.firstOrNull { readDurationMs(it.absolutePath) >= MIN_SEED_DURATION_MS }
+        if (existing != null) return existing.absolutePath
+
+        val generated = File(mediaDir, "ab_validation_seed.mp4")
+        generateSyntheticSeedVideo(generated)
+        val generatedDurationMs = readDurationMs(generated.absolutePath)
         assertTrue(
-            "seed media missing: no *.mp4 files under ${mediaDir.absolutePath}",
-            candidates.isNotEmpty()
+            "generated seed media too short: ${generatedDurationMs}ms at ${generated.absolutePath}",
+            generatedDurationMs >= MIN_SEED_DURATION_MS
         )
-        return candidates.first().absolutePath
+        return generated.absolutePath
+    }
+
+    private fun generateSyntheticSeedVideo(output: File) {
+        if (output.exists()) output.delete()
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, SEED_WIDTH, SEED_HEIGHT).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
+            setInteger(MediaFormat.KEY_BIT_RATE, SEED_BIT_RATE)
+            setInteger(MediaFormat.KEY_FRAME_RATE, SEED_FPS)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+        }
+        val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val info = MediaCodec.BufferInfo()
+        var muxerStarted = false
+        var trackIndex = -1
+        var frameIndex = 0
+        var inputDone = false
+        var outputDone = false
+
+        try {
+            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.start()
+            while (!outputDone) {
+                if (!inputDone) {
+                    val inputIndex = codec.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                    if (inputIndex >= 0) {
+                        val ptsUs = frameIndex * 1_000_000L / SEED_FPS
+                        val input = codec.getInputBuffer(inputIndex) ?: error("No encoder input buffer")
+                        if (frameIndex < SEED_FRAME_COUNT) {
+                            val size = fillSyntheticYuvFrame(input, frameIndex)
+                            codec.queueInputBuffer(inputIndex, 0, size, ptsUs, 0)
+                            frameIndex++
+                        } else {
+                            codec.queueInputBuffer(inputIndex, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        }
+                    }
+                }
+
+                when (val outputIndex = codec.dequeueOutputBuffer(info, CODEC_TIMEOUT_US)) {
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        trackIndex = muxer.addTrack(codec.outputFormat)
+                        muxer.start()
+                        muxerStarted = true
+                    }
+                    else -> if (outputIndex >= 0) {
+                        val encoded = codec.getOutputBuffer(outputIndex) ?: error("No encoder output buffer")
+                        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                            info.size = 0
+                        }
+                        if (info.size > 0) {
+                            check(muxerStarted) { "Muxer not started" }
+                            encoded.position(info.offset)
+                            encoded.limit(info.offset + info.size)
+                            muxer.writeSampleData(trackIndex, encoded, info)
+                        }
+                        outputDone = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        codec.releaseOutputBuffer(outputIndex, false)
+                    }
+                }
+            }
+        } finally {
+            runCatching { codec.stop() }
+            runCatching { codec.release() }
+            if (muxerStarted) runCatching { muxer.stop() }
+            runCatching { muxer.release() }
+        }
+    }
+
+    private fun fillSyntheticYuvFrame(buffer: java.nio.ByteBuffer, frameIndex: Int): Int {
+        buffer.clear()
+        val ySize = SEED_WIDTH * SEED_HEIGHT
+        val frameSize = ySize * 3 / 2
+        for (y in 0 until SEED_HEIGHT) {
+            for (x in 0 until SEED_WIDTH) {
+                buffer.put((32 + ((x + frameIndex * 5 + y / 3) % 192)).toByte())
+            }
+        }
+        val u = (96 + (frameIndex * 3 % 48)).toByte()
+        val v = (160 - (frameIndex * 2 % 48)).toByte()
+        repeat(ySize / 4) {
+            buffer.put(u)
+            buffer.put(v)
+        }
+        return frameSize
     }
 
     private suspend fun seedProject(
@@ -187,6 +288,14 @@ class TransitionExportAbValidationTest {
         const val TAG = "AB_EXPORT_VALIDATION"
         const val EXPORT_TIMEOUT_MS = 240_000L
         const val POLL_MS = 500L
+        const val MIN_SEED_DURATION_MS = 1500L
+        const val SEED_WIDTH = 320
+        const val SEED_HEIGHT = 240
+        const val SEED_FPS = 15
+        const val SEED_DURATION_SECONDS = 3
+        const val SEED_FRAME_COUNT = SEED_FPS * SEED_DURATION_SECONDS
+        const val SEED_BIT_RATE = 600_000
+        const val CODEC_TIMEOUT_US = 10_000L
         val TERMINAL_STATUSES = setOf(
             RenderJobStatus.COMPLETED,
             RenderJobStatus.FAILED,

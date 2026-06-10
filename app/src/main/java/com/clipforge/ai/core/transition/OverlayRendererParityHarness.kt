@@ -90,6 +90,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, whipPanId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.MotionBlur ->
+                        results += runOp(context, index, "MOTION_BLUR", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, motionBlurId(op.direction),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                 }
                 index++
             }
@@ -107,6 +112,13 @@ object OverlayRendererParityHarness {
         "WHIP_PAN_UP" -> TransitionRegistrations.WHIP_PAN_UP
         "WHIP_PAN_DOWN" -> TransitionRegistrations.WHIP_PAN_DOWN
         else -> TransitionRegistrations.WHIP_PAN_LEFT
+    }
+
+    private fun motionBlurId(direction: String): TransitionId = when (direction.uppercase()) {
+        "MOTION_BLUR_RIGHT" -> TransitionRegistrations.MOTION_BLUR_RIGHT
+        "MOTION_BLUR_UP" -> TransitionRegistrations.MOTION_BLUR_UP
+        "MOTION_BLUR_DOWN" -> TransitionRegistrations.MOTION_BLUR_DOWN
+        else -> TransitionRegistrations.MOTION_BLUR_LEFT
     }
 
     private fun runOp(

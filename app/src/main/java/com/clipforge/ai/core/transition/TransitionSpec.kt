@@ -19,6 +19,7 @@ object TransitionSpec {
         Slide,
         Zoom,
         WhipPan,
+        MotionBlur,
         PlainCut
     }
 
@@ -68,6 +69,12 @@ object TransitionSpec {
         object Up : WhipPan(SlideDirection.Up)
         object Down : WhipPan(SlideDirection.Down)
     }
+    sealed class MotionBlur(val direction: SlideDirection) : Spec(Family.MotionBlur, exportable = true) {
+        object Left : MotionBlur(SlideDirection.Left)
+        object Right : MotionBlur(SlideDirection.Right)
+        object Up : MotionBlur(SlideDirection.Up)
+        object Down : MotionBlur(SlideDirection.Down)
+    }
     object PlainCut : Spec(Family.PlainCut, exportable = false)
 
     fun forType(type: TransitionType?): Spec = when (type) {
@@ -88,6 +95,10 @@ object TransitionSpec {
         TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
         TransitionType.WHIP_PAN_UP -> WhipPan.Up
         TransitionType.WHIP_PAN_DOWN -> WhipPan.Down
+        TransitionType.MOTION_BLUR_LEFT -> MotionBlur.Left
+        TransitionType.MOTION_BLUR_RIGHT -> MotionBlur.Right
+        TransitionType.MOTION_BLUR_UP -> MotionBlur.Up
+        TransitionType.MOTION_BLUR_DOWN -> MotionBlur.Down
         else -> PlainCut
     }
 
