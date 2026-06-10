@@ -117,6 +117,18 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
+        is CrossfadeRenderPlan.Op.Push -> Dispatch(
+            id = when (op.direction.uppercase()) {
+                "PUSH_RIGHT" -> TransitionRegistrations.PUSH_RIGHT
+                "PUSH_UP" -> TransitionRegistrations.PUSH_UP
+                "PUSH_DOWN" -> TransitionRegistrations.PUSH_DOWN
+                else -> TransitionRegistrations.PUSH_LEFT
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
         is CrossfadeRenderPlan.Op.Zoom -> Dispatch(
             id = if (op.mode.uppercase() == "ZOOM_OUT") TransitionRegistrations.ZOOM_OUT
             else TransitionRegistrations.ZOOM_IN,
@@ -200,6 +212,16 @@ object CrossfadeExecutor {
         }
     }
 
+    private fun pushVectorForDirection(raw: String, prefix: String): Pair<Float, Float> {
+        val dir = SlideOverlay.Direction.valueOf(raw.removePrefix(prefix))
+        return when (dir) {
+            SlideOverlay.Direction.LEFT -> -1f to 0f
+            SlideOverlay.Direction.RIGHT -> 1f to 0f
+            SlideOverlay.Direction.UP -> 0f to 1f
+            SlideOverlay.Direction.DOWN -> 0f to -1f
+        }
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -210,6 +232,8 @@ object CrossfadeExecutor {
                 "op[$index]=DIP pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} bHeadEndMs=${op.bHeadEndMs} halfMs=${op.halfDurationMs} color=${op.colorInt}"
             is CrossfadeRenderPlan.Op.Slide ->
                 "op[$index]=SLIDE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
+            is CrossfadeRenderPlan.Op.Push ->
+                "op[$index]=PUSH pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Zoom ->
                 "op[$index]=ZOOM pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.WhipPan ->
@@ -420,6 +444,58 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "SLIDE_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "SLIDE dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs slide=[$slideStartUs..$slideEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Push -> {
+                        onStage("Preparing push transition...")
+                        val pushStartUs = runningTimeMs * 1000L
+                        val pushEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val pushFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "PUSH_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$pushFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = pushFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "PUSH_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "PUSH_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Push cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val directionName = op.direction.removePrefix("PUSH_")
+                        Log.d(TAG, "PUSH_DIRECTION_PARSE_BEFORE index=$index raw=${op.direction} parsed=$directionName")
+                        val dir = SlideOverlay.Direction.valueOf(directionName)
+                        val (pushDirectionX, pushDirectionY) = pushVectorForDirection(op.direction, "PUSH_")
+                        Log.d(TAG, "PUSH_DIRECTION_PARSE_AFTER index=$index dir=$dir pushDir=($pushDirectionX,$pushDirectionY)")
+                        val pushEffect = PushGlEffect(
+                            startTimeUs = pushStartUs,
+                            endTimeUs = pushEndUs,
+                            directionX = pushDirectionX,
+                            directionY = pushDirectionY
+                        )
+                        val overlay = SlideOverlay(cache, pushStartUs, pushEndUs, dir)
+                        Log.d(TAG, "PUSH_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(pushEffect, OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "PUSH_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "PUSH dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs push=[$pushStartUs..$pushEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.Zoom -> {

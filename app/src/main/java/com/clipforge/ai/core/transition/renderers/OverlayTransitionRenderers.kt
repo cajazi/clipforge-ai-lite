@@ -6,6 +6,7 @@ import androidx.media3.transformer.EditedMediaItem
 import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
 import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
+import com.clipforge.ai.core.gl.PushGlEffect
 import com.clipforge.ai.core.gl.SlideOverlay
 import com.clipforge.ai.core.gl.ZoomOverlay
 import com.clipforge.ai.core.transition.SegmentContext
@@ -17,6 +18,17 @@ private fun blurVectorForDirection(raw: String, prefix: String): Pair<Float, Flo
     return when (dir) {
         SlideOverlay.Direction.LEFT -> 1f to 0f
         SlideOverlay.Direction.RIGHT -> -1f to 0f
+        SlideOverlay.Direction.UP -> 0f to 1f
+        SlideOverlay.Direction.DOWN -> 0f to -1f
+    }
+}
+
+@UnstableApi
+private fun pushVectorForDirection(raw: String, prefix: String): Pair<Float, Float> {
+    val dir = SlideOverlay.Direction.valueOf(raw.removePrefix(prefix))
+    return when (dir) {
+        SlideOverlay.Direction.LEFT -> -1f to 0f
+        SlideOverlay.Direction.RIGHT -> 1f to 0f
         SlideOverlay.Direction.UP -> 0f to 1f
         SlideOverlay.Direction.DOWN -> 0f to -1f
     }
@@ -85,6 +97,24 @@ class SlideTransitionRenderer : TransitionRenderer {
         val dir = SlideOverlay.Direction.valueOf(raw.removePrefix("SLIDE_"))
         val overlay = SlideOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, dir)
         return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, OverlayEffect(listOf(overlay))))
+    }
+}
+
+/** Push L/R/U/D. Moves A out while B slides in over the same overlap window. */
+@UnstableApi
+class PushTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Push cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val raw = ctx.param(TransitionParamKeys.DIRECTION) ?: "PUSH_LEFT"
+        val dir = SlideOverlay.Direction.valueOf(raw.removePrefix("PUSH_"))
+        val (pushX, pushY) = pushVectorForDirection(raw, "PUSH_")
+        val push = PushGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, pushX, pushY)
+        val overlay = SlideOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, dir)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, push, OverlayEffect(listOf(overlay))))
     }
 }
 

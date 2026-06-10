@@ -80,6 +80,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, TransitionRegistrations.SLIDE_LEFT,
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.Push ->
+                        results += runOp(context, index, "PUSH", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, pushId(op.direction),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.Zoom ->
                         results += runOp(context, index, "ZOOM", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, TransitionRegistrations.ZOOM_IN,
@@ -112,6 +117,13 @@ object OverlayRendererParityHarness {
         "WHIP_PAN_UP" -> TransitionRegistrations.WHIP_PAN_UP
         "WHIP_PAN_DOWN" -> TransitionRegistrations.WHIP_PAN_DOWN
         else -> TransitionRegistrations.WHIP_PAN_LEFT
+    }
+
+    private fun pushId(direction: String): TransitionId = when (direction.uppercase()) {
+        "PUSH_RIGHT" -> TransitionRegistrations.PUSH_RIGHT
+        "PUSH_UP" -> TransitionRegistrations.PUSH_UP
+        "PUSH_DOWN" -> TransitionRegistrations.PUSH_DOWN
+        else -> TransitionRegistrations.PUSH_LEFT
     }
 
     private fun motionBlurId(direction: String): TransitionId = when (direction.uppercase()) {

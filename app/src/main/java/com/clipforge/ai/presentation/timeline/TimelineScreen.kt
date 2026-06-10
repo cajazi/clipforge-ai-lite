@@ -549,6 +549,33 @@ private fun previewTransitionVisualState(
                 incoming = incoming
             )
         }
+        is TransitionSpec.Push -> {
+            val remaining = 1f - p
+            val outgoing = when (spec.direction) {
+                TransitionSpec.SlideDirection.Left ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = -widthPx * p)
+                TransitionSpec.SlideDirection.Right ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * p)
+                TransitionSpec.SlideDirection.Up ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * p)
+                TransitionSpec.SlideDirection.Down ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * p)
+            }
+            val incoming = when (spec.direction) {
+                TransitionSpec.SlideDirection.Left ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * remaining)
+                TransitionSpec.SlideDirection.Right ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = -widthPx * remaining)
+                TransitionSpec.SlideDirection.Up ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * remaining)
+                TransitionSpec.SlideDirection.Down ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * remaining)
+            }
+            PreviewTransitionVisualState(
+                outgoing = outgoing,
+                incoming = incoming
+            )
+        }
         is TransitionSpec.Zoom -> {
             val scaleStart = when (spec.mode) {
                 TransitionSpec.ZoomMode.In -> TransitionSpec.ZOOM_IN_SCALE_START

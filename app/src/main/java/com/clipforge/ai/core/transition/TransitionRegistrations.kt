@@ -4,6 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.MotionBlurTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.PushTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.SlideTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.WhipPanTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.ZoomTransitionRenderer
@@ -31,6 +32,10 @@ object TransitionRegistrations {
     val SLIDE_RIGHT = TransitionId("slide_right")
     val SLIDE_UP = TransitionId("slide_up")
     val SLIDE_DOWN = TransitionId("slide_down")
+    val PUSH_LEFT = TransitionId("push_left")
+    val PUSH_RIGHT = TransitionId("push_right")
+    val PUSH_UP = TransitionId("push_up")
+    val PUSH_DOWN = TransitionId("push_down")
     val ZOOM_IN = TransitionId("zoom_in")
     val ZOOM_OUT = TransitionId("zoom_out")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
@@ -54,6 +59,10 @@ object TransitionRegistrations {
         TransitionType.SLIDE_RIGHT -> SLIDE_RIGHT
         TransitionType.SLIDE_UP -> SLIDE_UP
         TransitionType.SLIDE_DOWN -> SLIDE_DOWN
+        TransitionType.PUSH_LEFT -> PUSH_LEFT
+        TransitionType.PUSH_RIGHT -> PUSH_RIGHT
+        TransitionType.PUSH_UP -> PUSH_UP
+        TransitionType.PUSH_DOWN -> PUSH_DOWN
         TransitionType.ZOOM_IN -> ZOOM_IN
         TransitionType.ZOOM_OUT -> ZOOM_OUT
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
@@ -72,6 +81,7 @@ object TransitionRegistrations {
         val crossfade = CrossfadeTransitionRenderer()
         val dip = DipToColorTransitionRenderer()
         val slide = SlideTransitionRenderer()
+        val push = PushTransitionRenderer()
         val zoom = ZoomTransitionRenderer()
         val whip = WhipPanTransitionRenderer()
         val motionBlur = MotionBlurTransitionRenderer()
@@ -106,6 +116,7 @@ object TransitionRegistrations {
         val sDissolve = "Preparing dissolve transition..."
         val sFade = "Preparing fade transition..."
         val sSlide = "Preparing slide transition..."
+        val sPush = "Preparing push transition..."
         val sZoom = "Preparing zoom transition..."
         val sWhip = "Preparing whip pan transition..."
         val sMotionBlur = "Preparing motion blur transition..."
@@ -117,6 +128,10 @@ object TransitionRegistrations {
         reg(SLIDE_RIGHT, "Slide Right", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
         reg(SLIDE_UP, "Slide Up", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
         reg(SLIDE_DOWN, "Slide Down", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
+        reg(PUSH_LEFT, "Push Left", TransitionCategory.MOTION, TimingModel.Overlap, push, sPush)
+        reg(PUSH_RIGHT, "Push Right", TransitionCategory.MOTION, TimingModel.Overlap, push, sPush)
+        reg(PUSH_UP, "Push Up", TransitionCategory.MOTION, TimingModel.Overlap, push, sPush)
+        reg(PUSH_DOWN, "Push Down", TransitionCategory.MOTION, TimingModel.Overlap, push, sPush)
         reg(ZOOM_IN, "Zoom In", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
         reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)

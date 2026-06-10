@@ -17,6 +17,7 @@ object TransitionSpec {
         Crossfade,
         Dip,
         Slide,
+        Push,
         Zoom,
         WhipPan,
         MotionBlur,
@@ -59,6 +60,13 @@ object TransitionSpec {
         object Down : Slide(SlideDirection.Down)
     }
 
+    sealed class Push(val direction: SlideDirection) : Spec(Family.Push, exportable = true) {
+        object Left : Push(SlideDirection.Left)
+        object Right : Push(SlideDirection.Right)
+        object Up : Push(SlideDirection.Up)
+        object Down : Push(SlideDirection.Down)
+    }
+
     sealed class Zoom(val mode: ZoomMode) : Spec(Family.Zoom, exportable = true) {
         object In : Zoom(ZoomMode.In)
         object Out : Zoom(ZoomMode.Out)
@@ -89,6 +97,10 @@ object TransitionSpec {
         TransitionType.SLIDE_RIGHT -> Slide.Right
         TransitionType.SLIDE_UP -> Slide.Up
         TransitionType.SLIDE_DOWN -> Slide.Down
+        TransitionType.PUSH_LEFT -> Push.Left
+        TransitionType.PUSH_RIGHT -> Push.Right
+        TransitionType.PUSH_UP -> Push.Up
+        TransitionType.PUSH_DOWN -> Push.Down
         TransitionType.ZOOM_IN -> Zoom.In
         TransitionType.ZOOM_OUT -> Zoom.Out
         TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
