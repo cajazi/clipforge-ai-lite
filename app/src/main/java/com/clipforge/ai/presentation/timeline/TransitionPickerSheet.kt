@@ -72,6 +72,8 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CAMERA_ROLL -> "CR"
     TransitionType.WHIP_PAN_LEFT -> "<~"
     TransitionType.WHIP_PAN_RIGHT -> "~>"
+    TransitionType.WHIP_PAN_UP -> "^~"
+    TransitionType.WHIP_PAN_DOWN -> "v~"
     TransitionType.FLASH -> "*"
     TransitionType.FLASH_BLACK -> "B*"
     TransitionType.BOUNCE -> "Bo"
@@ -172,7 +174,9 @@ private val CAMERA_TYPES = listOf(
     TransitionType.ROTATE,
     TransitionType.CAMERA_ROLL,
     TransitionType.WHIP_PAN_LEFT,
-    TransitionType.WHIP_PAN_RIGHT
+    TransitionType.WHIP_PAN_RIGHT,
+    TransitionType.WHIP_PAN_UP,
+    TransitionType.WHIP_PAN_DOWN
 )
 private val EFFECT_TYPES = listOf(
     TransitionType.FLASH,

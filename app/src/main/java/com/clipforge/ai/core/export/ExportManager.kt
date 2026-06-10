@@ -42,6 +42,7 @@ data class ExportManagerState(
     val canCancel: Boolean = false
 )
 
+@OptIn(UnstableApi::class)
 class ExportManager(
     private val application: Application,
     private val prefsManager: UserPreferencesManager

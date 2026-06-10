@@ -87,7 +87,7 @@ object OverlayRendererParityHarness {
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.WhipPan ->
                         results += runOp(context, index, "WHIP_PAN", op.pathA, op.aTailStartMs, op.aEndMs,
-                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, TransitionRegistrations.WHIP_PAN_LEFT,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, whipPanId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
                 }
@@ -100,6 +100,13 @@ object OverlayRendererParityHarness {
         val passed = results.count { it.pass }
         Log.d(TAG, "PARITY_SUMMARY projectId=$projectId transitions=${results.size} passed=$passed failed=${results.size - passed}")
         results
+    }
+
+    private fun whipPanId(direction: String): TransitionId = when (direction.uppercase()) {
+        "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
+        "WHIP_PAN_UP" -> TransitionRegistrations.WHIP_PAN_UP
+        "WHIP_PAN_DOWN" -> TransitionRegistrations.WHIP_PAN_DOWN
+        else -> TransitionRegistrations.WHIP_PAN_LEFT
     }
 
     private fun runOp(

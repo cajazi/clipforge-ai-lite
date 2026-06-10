@@ -38,7 +38,10 @@ class TransitionExportAbValidationTest {
         Case("Slide Right", "SLIDE_RIGHT"),
         Case("Zoom In", "ZOOM_IN"),
         Case("Zoom Out", "ZOOM_OUT"),
-        Case("Whip Pan Left", "WHIP_PAN_LEFT")
+        Case("Whip Pan Left", "WHIP_PAN_LEFT"),
+        Case("Whip Pan Right", "WHIP_PAN_RIGHT"),
+        Case("Whip Pan Up", "WHIP_PAN_UP"),
+        Case("Whip Pan Down", "WHIP_PAN_DOWN")
     )
 
     @Test

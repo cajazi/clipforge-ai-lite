@@ -62,7 +62,12 @@ object TransitionSpec {
         object In : Zoom(ZoomMode.In)
         object Out : Zoom(ZoomMode.Out)
     }
-    object WhipPanLeft : Spec(Family.WhipPan, exportable = true)
+    sealed class WhipPan(val direction: SlideDirection) : Spec(Family.WhipPan, exportable = true) {
+        object Left : WhipPan(SlideDirection.Left)
+        object Right : WhipPan(SlideDirection.Right)
+        object Up : WhipPan(SlideDirection.Up)
+        object Down : WhipPan(SlideDirection.Down)
+    }
     object PlainCut : Spec(Family.PlainCut, exportable = false)
 
     fun forType(type: TransitionType?): Spec = when (type) {
@@ -79,7 +84,10 @@ object TransitionSpec {
         TransitionType.SLIDE_DOWN -> Slide.Down
         TransitionType.ZOOM_IN -> Zoom.In
         TransitionType.ZOOM_OUT -> Zoom.Out
-        TransitionType.WHIP_PAN_LEFT -> WhipPanLeft
+        TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
+        TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
+        TransitionType.WHIP_PAN_UP -> WhipPan.Up
+        TransitionType.WHIP_PAN_DOWN -> WhipPan.Down
         else -> PlainCut
     }
 

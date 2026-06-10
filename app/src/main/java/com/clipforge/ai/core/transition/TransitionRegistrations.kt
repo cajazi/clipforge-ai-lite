@@ -34,6 +34,8 @@ object TransitionRegistrations {
     val ZOOM_OUT = TransitionId("zoom_out")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
     val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
+    val WHIP_PAN_UP = TransitionId("whip_pan_up")
+    val WHIP_PAN_DOWN = TransitionId("whip_pan_down")
 
     /**
      * Maps a persisted [TransitionType] to its framework [TransitionId], or null if that type
@@ -51,6 +53,8 @@ object TransitionRegistrations {
         TransitionType.ZOOM_OUT -> ZOOM_OUT
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
         TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
+        TransitionType.WHIP_PAN_UP -> WHIP_PAN_UP
+        TransitionType.WHIP_PAN_DOWN -> WHIP_PAN_DOWN
         else -> null
     }
 
@@ -106,5 +110,7 @@ object TransitionRegistrations {
         reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
+        reg(WHIP_PAN_UP, "Whip Pan Up", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
+        reg(WHIP_PAN_DOWN, "Whip Pan Down", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
     }
 }

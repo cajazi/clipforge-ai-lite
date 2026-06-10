@@ -126,8 +126,12 @@ object CrossfadeExecutor {
             params = mapOf(TransitionParamKeys.MODE to op.mode)
         )
         is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
-            id = if (op.direction.uppercase() == "WHIP_PAN_RIGHT") TransitionRegistrations.WHIP_PAN_RIGHT
-            else TransitionRegistrations.WHIP_PAN_LEFT,
+            id = when (op.direction.uppercase()) {
+                "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
+                "WHIP_PAN_UP" -> TransitionRegistrations.WHIP_PAN_UP
+                "WHIP_PAN_DOWN" -> TransitionRegistrations.WHIP_PAN_DOWN
+                else -> TransitionRegistrations.WHIP_PAN_LEFT
+            },
             pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
             pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,

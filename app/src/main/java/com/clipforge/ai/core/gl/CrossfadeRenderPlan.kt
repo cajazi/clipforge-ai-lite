@@ -33,7 +33,7 @@ object CrossfadeRenderPlan {
     // Zoom transitions: clip B zooms into place over static clip A.
     private val ZOOM_TYPES = setOf("ZOOM_IN", "ZOOM_OUT")
     // Phase 0 experimental motion transition: B whips in over a blurred A tail.
-    private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT")
+    private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT", "WHIP_PAN_RIGHT", "WHIP_PAN_UP", "WHIP_PAN_DOWN")
 
     data class ClipInfo(
         val path: String,

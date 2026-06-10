@@ -93,7 +93,7 @@ class ZoomTransitionRenderer : TransitionRenderer {
     }
 }
 
-/** Whip Pan L/R. Mirrors Op.WhipPan (directional blur GlEffect + slide overlay). */
+/** Whip Pan L/R/U/D. Mirrors Op.WhipPan (directional blur GlEffect + slide overlay). */
 @UnstableApi
 class WhipPanTransitionRenderer : TransitionRenderer {
     override val supportsExport = true

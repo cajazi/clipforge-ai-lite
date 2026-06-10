@@ -20,6 +20,8 @@ enum class TransitionType(val label: String, val isPremium: Boolean) {
     CAMERA_ROLL("Camera Roll", false),
     WHIP_PAN_LEFT("Whip Pan Left", false),
     WHIP_PAN_RIGHT("Whip Pan Right", false),
+    WHIP_PAN_UP("Whip Pan Up", false),
+    WHIP_PAN_DOWN("Whip Pan Down", false),
     CROSS_DISSOLVE("Dissolve", false),
     FLASH("Flash White", false),
     FLASH_BLACK("Flash Black", false),

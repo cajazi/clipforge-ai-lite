@@ -67,6 +67,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -573,12 +574,22 @@ private fun previewTransitionVisualState(
                 )
             )
         }
-        TransitionSpec.WhipPanLeft -> {
+        is TransitionSpec.WhipPan -> {
             val remaining = 1f - p
             val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
+            val incoming = when (spec.direction) {
+                TransitionSpec.SlideDirection.Left ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * remaining)
+                TransitionSpec.SlideDirection.Right ->
+                    PreviewTransitionLayerState(alpha = 1f, translationX = -widthPx * remaining)
+                TransitionSpec.SlideDirection.Up ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = heightPx * remaining)
+                TransitionSpec.SlideDirection.Down ->
+                    PreviewTransitionLayerState(alpha = 1f, translationY = -heightPx * remaining)
+            }
             PreviewTransitionVisualState(
                 outgoing = PreviewTransitionLayerState(),
-                incoming = PreviewTransitionLayerState(alpha = 1f, translationX = widthPx * remaining),
+                incoming = incoming,
                 overlayColor = Color.White,
                 overlayAlpha = peak * 0.10f
             )
@@ -1102,6 +1113,7 @@ private fun IncomingTransitionLayer(
     }
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun VideoPreviewPlayer(
     clips: List<ClipUiModel>,
@@ -3405,6 +3417,8 @@ private fun CapCutTransitionPanel(
             TransitionType.CAMERA_ROLL,
             TransitionType.WHIP_PAN_LEFT,
             TransitionType.WHIP_PAN_RIGHT,
+            TransitionType.WHIP_PAN_UP,
+            TransitionType.WHIP_PAN_DOWN,
             TransitionType.FLASH,
             TransitionType.FLASH_BLACK,
             TransitionType.BOUNCE,
@@ -3433,7 +3447,15 @@ private fun CapCutTransitionPanel(
             "Zoom" -> listOf(TransitionType.ZOOM_IN, TransitionType.ZOOM_OUT)
             "Blur" -> listOf(TransitionType.BLUR, TransitionType.MOTION_BLUR, TransitionType.GAUSSIAN_BLUR)
             "Glitch" -> listOf(TransitionType.GLITCH, TransitionType.RGB_SPLIT, TransitionType.CHROMATIC_ABERRATION)
-            "Camera" -> listOf(TransitionType.SPIN, TransitionType.ROTATE, TransitionType.CAMERA_ROLL, TransitionType.WHIP_PAN_LEFT, TransitionType.WHIP_PAN_RIGHT)
+            "Camera" -> listOf(
+                TransitionType.SPIN,
+                TransitionType.ROTATE,
+                TransitionType.CAMERA_ROLL,
+                TransitionType.WHIP_PAN_LEFT,
+                TransitionType.WHIP_PAN_RIGHT,
+                TransitionType.WHIP_PAN_UP,
+                TransitionType.WHIP_PAN_DOWN
+            )
             "Effects" -> listOf(TransitionType.FLASH, TransitionType.FLASH_BLACK, TransitionType.BOUNCE, TransitionType.SHAKE, TransitionType.SWING, TransitionType.POP)
             "3D" -> listOf(
                 TransitionType.CUBE_LEFT,
@@ -3684,6 +3706,8 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CAMERA_ROLL -> "CR"
     TransitionType.WHIP_PAN_LEFT -> "<~"
     TransitionType.WHIP_PAN_RIGHT -> "~>"
+    TransitionType.WHIP_PAN_UP -> "^~"
+    TransitionType.WHIP_PAN_DOWN -> "v~"
     TransitionType.FLASH_BLACK -> "B*"
     TransitionType.BOUNCE -> "Bo"
     TransitionType.SHAKE -> "Sh"
@@ -3731,7 +3755,9 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.ROTATE,
     TransitionType.CAMERA_ROLL,
     TransitionType.WHIP_PAN_LEFT,
-    TransitionType.WHIP_PAN_RIGHT -> Brush.linearGradient(listOf(Color(0xFFFF6B9A), Color(0xFF6C5CFF)))
+    TransitionType.WHIP_PAN_RIGHT,
+    TransitionType.WHIP_PAN_UP,
+    TransitionType.WHIP_PAN_DOWN -> Brush.linearGradient(listOf(Color(0xFFFF6B9A), Color(0xFF6C5CFF)))
     TransitionType.WIPE -> Brush.linearGradient(listOf(Color(0xFF2D2D32), Color(0xFF9BFFB7)))
     TransitionType.SLIDE_UP,
     TransitionType.SLIDE_DOWN,
