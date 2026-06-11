@@ -330,6 +330,13 @@ object CrossfadeExecutor {
         else -> FilmBurnMode.CLASSIC
     }
 
+    private fun glitchModeFor(raw: String): GlitchMode = when (raw.uppercase()) {
+        "GLITCH_DIGITAL" -> GlitchMode.DIGITAL
+        "GLITCH_RGB" -> GlitchMode.RGB
+        "GLITCH_SCANLINE" -> GlitchMode.SCANLINE
+        else -> GlitchMode.PRO
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -1041,7 +1048,47 @@ object CrossfadeExecutor {
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.GlitchPro -> {
-                        throw IllegalStateException("Glitch Pro executor wiring pending for op index=$index")
+                        onStage("Preparing glitch transition...")
+                        val glitchStartUs = runningTimeMs * 1000L
+                        val glitchEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val glitchFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "GLITCH_PRO_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$glitchFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = glitchFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "GLITCH_PRO_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "GLITCH_PRO_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Glitch Pro cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val mode = glitchModeFor(op.mode)
+                        Log.d(TAG, "GLITCH_PRO_EFFECT_CREATE_BEFORE index=$index mode=$mode window=[$glitchStartUs..$glitchEndUs]")
+                        val effect = GlitchProGlEffect(glitchStartUs, glitchEndUs, cache, mode)
+                        Log.d(TAG, "GLITCH_PRO_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(effect)))
+                                .build()
+                        )
+                        Log.d(TAG, "GLITCH_PRO_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "GLITCH_PRO mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs glitch=[$glitchStartUs..$glitchEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
                     }
                     }
                     Log.d(TAG, "BUILD_ITEM_AFTER index=$index runningTimeMs=$runningTimeMs itemCount=${items.size} cacheCount=${caches.size}")
