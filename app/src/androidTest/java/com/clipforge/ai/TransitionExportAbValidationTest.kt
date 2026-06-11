@@ -109,21 +109,41 @@ class TransitionExportAbValidationTest {
     private fun seedPath(context: Context): String {
         val mediaDir = File(context.filesDir, "media")
         mediaDir.mkdirs()
-        val candidates = mediaDir
-            .listFiles { file -> file.isFile && file.extension.equals("mp4", ignoreCase = true) }
-            .orEmpty()
-            .sortedBy { it.name }
-        val existing = candidates.firstOrNull { readDurationMs(it.absolutePath) >= MIN_SEED_DURATION_MS }
-        if (existing != null) return existing.absolutePath
+        val seed = File(mediaDir, SEED_FILE_NAME)
 
-        val generated = File(mediaDir, "ab_validation_seed.mp4")
-        generateSyntheticSeedVideo(generated)
-        val generatedDurationMs = readDurationMs(generated.absolutePath)
-        assertTrue(
-            "generated seed media too short: ${generatedDurationMs}ms at ${generated.absolutePath}",
-            generatedDurationMs >= MIN_SEED_DURATION_MS
+        val synthetic = runCatching {
+            val existingDurationMs = if (seed.isFile) readDurationMs(seed.absolutePath) else 0L
+            if (existingDurationMs < MIN_SEED_DURATION_MS) {
+                generateSyntheticSeedVideo(seed)
+            }
+            val durationMs = readDurationMs(seed.absolutePath)
+            check(seed.isFile && durationMs >= MIN_SEED_DURATION_MS) {
+                "synthetic seed invalid durationMs=$durationMs path=${seed.absolutePath}"
+            }
+            seed
+        }
+
+        val chosen = synthetic.getOrElse { error ->
+            Log.w(TAG, "SEED_SYNTHETIC_UNAVAILABLE path=${seed.absolutePath} reason=${error.message}", error)
+            mediaDir
+                .listFiles { file -> file.isFile && file.extension.equals("mp4", ignoreCase = true) }
+                .orEmpty()
+                .filter { it.name != SEED_FILE_NAME }
+                .sortedBy { it.name }
+                .firstOrNull { readDurationMs(it.absolutePath) >= MIN_SEED_DURATION_MS }
+                ?: throw AssertionError("synthetic seed unavailable and no imported fallback media found", error)
+        }
+
+        logSeedInfo(chosen, if (chosen.name == SEED_FILE_NAME) "synthetic" else "imported_fallback")
+        return chosen.absolutePath
+    }
+
+    private fun logSeedInfo(seed: File, source: String) {
+        Log.d(
+            TAG,
+            "SEED_INFO source=$source path=${seed.absolutePath} durationMs=${readDurationMs(seed.absolutePath)} " +
+                "bytes=${seed.length()} hasAudio=${readHasAudio(seed.absolutePath)}"
         )
-        return generated.absolutePath
     }
 
     private fun generateSyntheticSeedVideo(output: File) {
@@ -307,11 +327,24 @@ class TransitionExportAbValidationTest {
         }
     }
 
+    private fun readHasAudio(path: String): Boolean {
+        val mmr = MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(path)
+            mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+        } catch (_: Exception) {
+            false
+        } finally {
+            runCatching { mmr.release() }
+        }
+    }
+
     private companion object {
         const val TAG = "AB_EXPORT_VALIDATION"
         const val EXPORT_TIMEOUT_MS = 240_000L
         const val POLL_MS = 500L
         const val MIN_SEED_DURATION_MS = 1500L
+        const val SEED_FILE_NAME = "ab_validation_seed.mp4"
         const val SEED_WIDTH = 320
         const val SEED_HEIGHT = 240
         const val SEED_FPS = 15
