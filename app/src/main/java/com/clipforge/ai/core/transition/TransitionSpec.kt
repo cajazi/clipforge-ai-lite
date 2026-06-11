@@ -53,7 +53,9 @@ object TransitionSpec {
 
     enum class CubeDirection {
         Left,
-        Right
+        Right,
+        Up,
+        Down
     }
 
     enum class FlipDirection {
@@ -106,6 +108,8 @@ object TransitionSpec {
     sealed class Cube(val direction: CubeDirection) : Spec(Family.Cube, exportable = true) {
         object Left : Cube(CubeDirection.Left)
         object Right : Cube(CubeDirection.Right)
+        object Up : Cube(CubeDirection.Up)
+        object Down : Cube(CubeDirection.Down)
     }
     sealed class Flip(val direction: FlipDirection) : Spec(Family.Flip, exportable = true) {
         object Left : Flip(FlipDirection.Left)
@@ -154,6 +158,8 @@ object TransitionSpec {
         TransitionType.CAMERA_ROLL -> Rotation.CameraRoll
         TransitionType.CUBE_LEFT -> Cube.Left
         TransitionType.CUBE_RIGHT -> Cube.Right
+        TransitionType.CUBE_UP -> Cube.Up
+        TransitionType.CUBE_DOWN -> Cube.Down
         TransitionType.FLIP_LEFT -> Flip.Left
         TransitionType.FLIP_RIGHT -> Flip.Right
         TransitionType.FLIP_UP -> Flip.Up

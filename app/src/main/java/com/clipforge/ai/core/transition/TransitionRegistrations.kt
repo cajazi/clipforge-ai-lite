@@ -47,6 +47,8 @@ object TransitionRegistrations {
     val CAMERA_ROLL = TransitionId("camera_roll")
     val CUBE_LEFT = TransitionId("cube_left")
     val CUBE_RIGHT = TransitionId("cube_right")
+    val CUBE_UP = TransitionId("cube_up")
+    val CUBE_DOWN = TransitionId("cube_down")
     val FLIP_LEFT = TransitionId("flip_left")
     val FLIP_RIGHT = TransitionId("flip_right")
     val FLIP_UP = TransitionId("flip_up")
@@ -85,6 +87,8 @@ object TransitionRegistrations {
         TransitionType.CAMERA_ROLL -> CAMERA_ROLL
         TransitionType.CUBE_LEFT -> CUBE_LEFT
         TransitionType.CUBE_RIGHT -> CUBE_RIGHT
+        TransitionType.CUBE_UP -> CUBE_UP
+        TransitionType.CUBE_DOWN -> CUBE_DOWN
         TransitionType.FLIP_LEFT -> FLIP_LEFT
         TransitionType.FLIP_RIGHT -> FLIP_RIGHT
         TransitionType.FLIP_UP -> FLIP_UP
@@ -173,6 +177,8 @@ object TransitionRegistrations {
         reg(CAMERA_ROLL, "Camera Roll", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(CUBE_LEFT, "3D Cube Left", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
         reg(CUBE_RIGHT, "3D Cube Right", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
+        reg(CUBE_UP, "3D Cube Up", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
+        reg(CUBE_DOWN, "3D Cube Down", TransitionCategory.THREE_D, TimingModel.Overlap, cube, sCube)
         reg(FLIP_LEFT, "Flip Left", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
         reg(FLIP_RIGHT, "Flip Right", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
         reg(FLIP_UP, "Flip Up", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)

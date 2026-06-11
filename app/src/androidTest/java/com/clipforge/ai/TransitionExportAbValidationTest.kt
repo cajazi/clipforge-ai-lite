@@ -51,6 +51,8 @@ class TransitionExportAbValidationTest {
         Case("Camera Roll", "CAMERA_ROLL"),
         Case("Cube Left", "CUBE_LEFT"),
         Case("Cube Right", "CUBE_RIGHT"),
+        Case("Cube Up", "CUBE_UP"),
+        Case("Cube Down", "CUBE_DOWN"),
         Case("Flip Left", "FLIP_LEFT"),
         Case("Flip Right", "FLIP_RIGHT"),
         Case("Flip Up", "FLIP_UP"),

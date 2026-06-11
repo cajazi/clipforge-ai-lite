@@ -97,6 +97,8 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CHROMATIC_ABERRATION -> "CA"
     TransitionType.CUBE_LEFT -> "3L"
     TransitionType.CUBE_RIGHT -> "3R"
+    TransitionType.CUBE_UP -> "3U"
+    TransitionType.CUBE_DOWN -> "3D"
     TransitionType.FLIP_LEFT -> "FL"
     TransitionType.FLIP_RIGHT -> "FR"
     TransitionType.FLIP_UP -> "FU"
@@ -203,6 +205,8 @@ private val EFFECT_TYPES = listOf(
 private val THREE_D_TYPES = listOf(
     TransitionType.CUBE_LEFT,
     TransitionType.CUBE_RIGHT,
+    TransitionType.CUBE_UP,
+    TransitionType.CUBE_DOWN,
     TransitionType.FLIP_LEFT,
     TransitionType.FLIP_RIGHT,
     TransitionType.FLIP_UP,

@@ -46,6 +46,8 @@ enum class TransitionType(val label: String, val isPremium: Boolean) {
     CHROMATIC_ABERRATION("Chromatic Aberration", false),
     CUBE_LEFT("3D Cube Left", false),
     CUBE_RIGHT("3D Cube Right", false),
+    CUBE_UP("3D Cube Up", false),
+    CUBE_DOWN("3D Cube Down", false),
     FLIP_LEFT("Flip Left", false),
     FLIP_RIGHT("Flip Right", false),
     FLIP_UP("Flip Up", false),

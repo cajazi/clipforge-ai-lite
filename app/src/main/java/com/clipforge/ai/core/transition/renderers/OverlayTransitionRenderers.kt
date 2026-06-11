@@ -168,7 +168,7 @@ class RotationTransitionRenderer : TransitionRenderer {
     }
 }
 
-/** Horizontal Cube L/R. 2.5D approximation: A folds away while cached B expands in. */
+/** Cube L/R/U/D. 2.5D approximation: A folds away while cached B expands in. */
 @UnstableApi
 class CubeTransitionRenderer : TransitionRenderer {
     override val supportsExport = true
@@ -186,6 +186,8 @@ class CubeTransitionRenderer : TransitionRenderer {
 
     private fun cubeDirectionFor(raw: String): CubeDirection = when (raw.uppercase()) {
         "CUBE_RIGHT" -> CubeDirection.RIGHT
+        "CUBE_UP" -> CubeDirection.UP
+        "CUBE_DOWN" -> CubeDirection.DOWN
         else -> CubeDirection.LEFT
     }
 }

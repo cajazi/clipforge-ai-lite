@@ -652,22 +652,31 @@ private fun previewTransitionVisualState(
             )
         }
         is TransitionSpec.Cube -> {
+            val vertical = spec.direction == TransitionSpec.CubeDirection.Up ||
+                spec.direction == TransitionSpec.CubeDirection.Down
+            // Compose translation sign (Y is down-positive): Up exits toward -Y.
             val sign = when (spec.direction) {
-                TransitionSpec.CubeDirection.Left -> -1f
-                TransitionSpec.CubeDirection.Right -> 1f
+                TransitionSpec.CubeDirection.Left,
+                TransitionSpec.CubeDirection.Up -> -1f
+                TransitionSpec.CubeDirection.Right,
+                TransitionSpec.CubeDirection.Down -> 1f
             }
             PreviewTransitionVisualState(
                 outgoing = PreviewTransitionLayerState(
                     alpha = 1f,
-                    translationX = sign * widthPx * 0.38f * p,
+                    translationX = if (vertical) 0f else sign * widthPx * 0.38f * p,
+                    translationY = if (vertical) sign * heightPx * 0.38f * p else 0f,
                     scale = TransitionSpec.lerp(1f, 0.86f, p),
-                    rotationY = sign * 72f * p
+                    rotationY = if (vertical) 0f else sign * 72f * p,
+                    rotationX = if (vertical) -sign * 72f * p else 0f
                 ),
                 incoming = PreviewTransitionLayerState(
                     alpha = TransitionSpec.lerp(0.82f, 1f, p),
-                    translationX = -sign * widthPx * (1f - p),
+                    translationX = if (vertical) 0f else -sign * widthPx * (1f - p),
+                    translationY = if (vertical) -sign * heightPx * (1f - p) else 0f,
                     scale = TransitionSpec.lerp(0.86f, 1f, p),
-                    rotationY = -sign * 72f * (1f - p)
+                    rotationY = if (vertical) 0f else -sign * 72f * (1f - p),
+                    rotationX = if (vertical) sign * 72f * (1f - p) else 0f
                 )
             )
         }
@@ -3903,6 +3912,8 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CHROMATIC_ABERRATION -> "CA"
     TransitionType.CUBE_LEFT -> "3L"
     TransitionType.CUBE_RIGHT -> "3R"
+    TransitionType.CUBE_UP -> "3U"
+    TransitionType.CUBE_DOWN -> "3D"
     TransitionType.FLIP_LEFT -> "FL"
     TransitionType.FLIP_RIGHT -> "FR"
     TransitionType.FLIP_UP -> "FU"
@@ -3964,6 +3975,8 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.MIRROR_FLIP,
     TransitionType.CUBE_LEFT,
     TransitionType.CUBE_RIGHT,
+    TransitionType.CUBE_UP,
+    TransitionType.CUBE_DOWN,
     TransitionType.FLIP_LEFT,
     TransitionType.FLIP_RIGHT,
     TransitionType.FLIP_UP,

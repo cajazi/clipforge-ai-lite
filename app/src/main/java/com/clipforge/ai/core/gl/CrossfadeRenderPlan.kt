@@ -36,8 +36,8 @@ object CrossfadeRenderPlan {
     private val ZOOM_TYPES = setOf("ZOOM_IN", "ZOOM_OUT")
     // Rotation transitions: A rotates out while B rotates/scales into place.
     private val ROTATION_TYPES = setOf("SPIN", "ROTATE", "CAMERA_ROLL")
-    // Horizontal cube transitions: 2.5D cube turn approximation.
-    private val CUBE_TYPES = setOf("CUBE_LEFT", "CUBE_RIGHT")
+    // Cube transitions: 2.5D cube turn approximation (horizontal and vertical).
+    private val CUBE_TYPES = setOf("CUBE_LEFT", "CUBE_RIGHT", "CUBE_UP", "CUBE_DOWN")
     // Flip transitions: center-pivot card flip approximation.
     private val FLIP_TYPES = setOf("FLIP_LEFT", "FLIP_RIGHT", "FLIP_UP", "FLIP_DOWN")
     // Page turn transitions: A curls away while B is sampled underneath.

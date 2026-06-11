@@ -151,6 +151,8 @@ object CrossfadeExecutor {
         is CrossfadeRenderPlan.Op.Cube -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "CUBE_RIGHT" -> TransitionRegistrations.CUBE_RIGHT
+                "CUBE_UP" -> TransitionRegistrations.CUBE_UP
+                "CUBE_DOWN" -> TransitionRegistrations.CUBE_DOWN
                 else -> TransitionRegistrations.CUBE_LEFT
             },
             pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
@@ -273,6 +275,8 @@ object CrossfadeExecutor {
 
     private fun cubeDirectionFor(raw: String): CubeDirection = when (raw.uppercase()) {
         "CUBE_RIGHT" -> CubeDirection.RIGHT
+        "CUBE_UP" -> CubeDirection.UP
+        "CUBE_DOWN" -> CubeDirection.DOWN
         else -> CubeDirection.LEFT
     }
 

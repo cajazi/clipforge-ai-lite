@@ -154,6 +154,8 @@ object OverlayRendererParityHarness {
 
     private fun cubeId(direction: String): TransitionId = when (direction.uppercase()) {
         "CUBE_RIGHT" -> TransitionRegistrations.CUBE_RIGHT
+        "CUBE_UP" -> TransitionRegistrations.CUBE_UP
+        "CUBE_DOWN" -> TransitionRegistrations.CUBE_DOWN
         else -> TransitionRegistrations.CUBE_LEFT
     }
 

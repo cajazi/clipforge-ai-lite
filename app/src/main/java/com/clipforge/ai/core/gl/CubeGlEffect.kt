@@ -15,13 +15,17 @@ import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.StaticOverlaySettings
 
-enum class CubeDirection { LEFT, RIGHT }
+enum class CubeDirection { LEFT, RIGHT, UP, DOWN }
+
+internal val CubeDirection.isVertical: Boolean
+    get() = this == CubeDirection.UP || this == CubeDirection.DOWN
 
 /**
- * Horizontal 2.5D cube approximation for the outgoing A-tail.
+ * 2.5D cube approximation for the outgoing A-tail (horizontal and vertical turns).
  *
- * This intentionally avoids true perspective/depth. It narrows and shifts A as if the
- * face is rotating away, while [CubeBitmapOverlay] brings B in as the next face.
+ * This intentionally avoids true perspective/depth. It narrows and shifts A along the
+ * turn axis as if the face is rotating away, while [CubeBitmapOverlay] brings B in as
+ * the next face.
  */
 @UnstableApi
 class CubeGlEffect(
@@ -53,12 +57,16 @@ class CubeShaderProgram(
         val vertexShader = """
             attribute vec4 aFramePosition;
             attribute vec4 aTexSamplingCoord;
-            uniform float uScaleX;
-            uniform float uOffsetX;
+            uniform float uScale;
+            uniform float uOffset;
             uniform float uShear;
+            uniform float uVertical;
             varying vec2 vTexSamplingCoord;
             void main() {
-                vec2 xy = vec2((aFramePosition.x * uScaleX) + uOffsetX + (aFramePosition.y * uShear), aFramePosition.y);
+                vec2 pos = aFramePosition.xy;
+                vec2 horizontal = vec2((pos.x * uScale) + uOffset + (pos.y * uShear), pos.y);
+                vec2 vertical = vec2(pos.x, (pos.y * uScale) + uOffset + (pos.x * uShear));
+                vec2 xy = mix(horizontal, vertical, uVertical);
                 gl_Position = vec4(xy, aFramePosition.z, aFramePosition.w);
                 vTexSamplingCoord = aTexSamplingCoord.xy;
             }
@@ -102,17 +110,25 @@ class CubeShaderProgram(
                 0f
             }
             val t = tRaw * tRaw * (3f - 2f * tRaw)
-            val sign = if (direction == CubeDirection.LEFT) -1f else 1f
-            val scaleX = 1f - (0.72f * t)
-            val offsetX = sign * 0.86f * t
+            // NDC sign of A's exit edge: LEFT exits -x, RIGHT exits +x, UP exits +y (NDC
+            // y is up-positive), DOWN exits -y.
+            val sign = when (direction) {
+                CubeDirection.LEFT -> -1f
+                CubeDirection.RIGHT -> 1f
+                CubeDirection.UP -> 1f
+                CubeDirection.DOWN -> -1f
+            }
+            val scale = 1f - (0.72f * t)
+            val offset = sign * 0.86f * t
             val shear = -sign * 0.18f * t
             val shade = 1f - (0.32f * t)
 
             program.use()
             program.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
-            program.setFloatUniform("uScaleX", scaleX)
-            program.setFloatUniform("uOffsetX", offsetX)
+            program.setFloatUniform("uScale", scale)
+            program.setFloatUniform("uOffset", offset)
             program.setFloatUniform("uShear", shear)
+            program.setFloatUniform("uVertical", if (direction.isVertical) 1f else 0f)
             program.setFloatUniform("uShade", shade)
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, /* first= */ 0, /* count= */ 4)
@@ -170,23 +186,30 @@ class CubeBitmapOverlay(
             val span = (fadeEndUs - fadeStartUs).toFloat().coerceAtLeast(1f)
             val tRaw = ((presentationTimeUs - fadeStartUs).toFloat() / span).coerceIn(0f, 1f)
             val t = tRaw * tRaw * (3f - 2f * tRaw)
-            val sign = if (direction == CubeDirection.LEFT) 1f else -1f
+            // Opposite of CubeShaderProgram's exit sign: B enters from the edge A exposes.
+            val sign = when (direction) {
+                CubeDirection.LEFT -> 1f
+                CubeDirection.RIGHT -> -1f
+                CubeDirection.UP -> -1f
+                CubeDirection.DOWN -> 1f
+            }
+            val vertical = direction.isVertical
             val remaining = 1f - t
-            val scaleX = 0.28f + (0.72f * t)
-            val anchorX = sign * remaining
-            val bgX = -sign * remaining
+            val scaleAxis = 0.28f + (0.72f * t)
+            val anchor = sign * remaining
+            val bg = -sign * remaining
             val alpha = 0.82f + (0.18f * t)
 
             settingsCallCount++
             if (settingsCallCount <= 5 || settingsCallCount % 30 == 0) {
-                Log.d(tag, "settings call=$settingsCallCount direction=$direction tRaw=$tRaw t=$t scaleX=$scaleX anchorX=$anchorX alpha=$alpha")
+                Log.d(tag, "settings call=$settingsCallCount direction=$direction tRaw=$tRaw t=$t scaleAxis=$scaleAxis anchor=$anchor alpha=$alpha")
             }
 
             StaticOverlaySettings.Builder()
                 .setAlphaScale(alpha)
-                .setScale(scaleX, 1f)
-                .setOverlayFrameAnchor(anchorX, 0f)
-                .setBackgroundFrameAnchor(bgX, 0f)
+                .setScale(if (vertical) 1f else scaleAxis, if (vertical) scaleAxis else 1f)
+                .setOverlayFrameAnchor(if (vertical) 0f else anchor, if (vertical) anchor else 0f)
+                .setBackgroundFrameAnchor(if (vertical) 0f else bg, if (vertical) bg else 0f)
                 .build()
         } catch (t: Throwable) {
             Log.e(tag, "getOverlaySettings failed ptsUs=$presentationTimeUs direction=$direction", t)
