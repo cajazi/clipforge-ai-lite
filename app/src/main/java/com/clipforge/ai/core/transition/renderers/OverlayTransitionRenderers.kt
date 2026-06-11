@@ -16,6 +16,8 @@ import com.clipforge.ai.core.gl.FlipDirection
 import com.clipforge.ai.core.gl.FlipGlEffect
 import com.clipforge.ai.core.gl.FlashColorOverlay
 import com.clipforge.ai.core.gl.FlashRevealOverlay
+import com.clipforge.ai.core.gl.GlitchMode
+import com.clipforge.ai.core.gl.GlitchProGlEffect
 import com.clipforge.ai.core.gl.PageTurnDirection
 import com.clipforge.ai.core.gl.PageTurnGlEffect
 import com.clipforge.ai.core.gl.PushGlEffect
@@ -314,5 +316,27 @@ class MotionBlurTransitionRenderer : TransitionRenderer {
         val blur = DirectionalBlurGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, blurX, blurY)
         val overlay = CrossfadeBitmapOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs)
         return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, blur, OverlayEffect(listOf(overlay))))
+    }
+}
+
+/** Glitch Pro/Digital/RGB/Scanline. Shader-only burst corruption hides a midpoint A/B swap. */
+@UnstableApi
+class GlitchProTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Glitch Pro cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val mode = glitchModeFor(ctx.param(TransitionParamKeys.MODE) ?: "GLITCH_PRO")
+        val effect = GlitchProGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, cache, mode)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect))
+    }
+
+    private fun glitchModeFor(raw: String): GlitchMode = when (raw.uppercase()) {
+        "GLITCH_DIGITAL" -> GlitchMode.DIGITAL
+        "GLITCH_RGB" -> GlitchMode.RGB
+        "GLITCH_SCANLINE" -> GlitchMode.SCANLINE
+        else -> GlitchMode.PRO
     }
 }

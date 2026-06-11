@@ -27,6 +27,7 @@ object TransitionSpec {
         PageTurn,
         WhipPan,
         MotionBlur,
+        GlitchPro,
         PlainCut
     }
 
@@ -85,6 +86,13 @@ object TransitionSpec {
         Right,
         Up,
         Down
+    }
+
+    enum class GlitchMode {
+        Pro,
+        Digital,
+        Rgb,
+        Scanline
     }
 
     sealed class Spec(
@@ -163,6 +171,12 @@ object TransitionSpec {
         object Up : MotionBlur(SlideDirection.Up)
         object Down : MotionBlur(SlideDirection.Down)
     }
+    sealed class GlitchPro(val mode: GlitchMode) : Spec(Family.GlitchPro, exportable = true) {
+        object Pro : GlitchPro(GlitchMode.Pro)
+        object Digital : GlitchPro(GlitchMode.Digital)
+        object Rgb : GlitchPro(GlitchMode.Rgb)
+        object Scanline : GlitchPro(GlitchMode.Scanline)
+    }
     object PlainCut : Spec(Family.PlainCut, exportable = false)
 
     fun forType(type: TransitionType?): Spec = when (type) {
@@ -213,6 +227,10 @@ object TransitionSpec {
         TransitionType.MOTION_BLUR_RIGHT -> MotionBlur.Right
         TransitionType.MOTION_BLUR_UP -> MotionBlur.Up
         TransitionType.MOTION_BLUR_DOWN -> MotionBlur.Down
+        TransitionType.GLITCH_PRO -> GlitchPro.Pro
+        TransitionType.GLITCH_DIGITAL -> GlitchPro.Digital
+        TransitionType.GLITCH_RGB -> GlitchPro.Rgb
+        TransitionType.GLITCH_SCANLINE -> GlitchPro.Scanline
         else -> PlainCut
     }
 

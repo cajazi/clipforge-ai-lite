@@ -132,9 +132,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, motionBlurId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
-                    is CrossfadeRenderPlan.Op.GlitchPro -> {
-                        runningTimeMs += op.durationMs
-                    }
+                    is CrossfadeRenderPlan.Op.GlitchPro ->
+                        results += runOp(context, index, "GLITCH_PRO", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, glitchProId(op.mode),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.MODE to op.mode),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                 }
                 index++
             }
@@ -206,6 +208,13 @@ object OverlayRendererParityHarness {
         "FILM_BURN_WARM" -> TransitionRegistrations.FILM_BURN_WARM
         "FILM_BURN_HEAVY" -> TransitionRegistrations.FILM_BURN_HEAVY
         else -> TransitionRegistrations.FILM_BURN
+    }
+
+    private fun glitchProId(mode: String): TransitionId = when (mode.uppercase()) {
+        "GLITCH_DIGITAL" -> TransitionRegistrations.GLITCH_DIGITAL
+        "GLITCH_RGB" -> TransitionRegistrations.GLITCH_RGB
+        "GLITCH_SCANLINE" -> TransitionRegistrations.GLITCH_SCANLINE
+        else -> TransitionRegistrations.GLITCH_PRO
     }
 
     private fun runOp(

@@ -222,7 +222,13 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
-        is CrossfadeRenderPlan.Op.GlitchPro -> null
+        is CrossfadeRenderPlan.Op.GlitchPro -> Dispatch(
+            id = glitchIdFor(op.mode),
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.MODE to op.mode)
+        )
     }
 
     sealed class Result {
@@ -322,6 +328,13 @@ object CrossfadeExecutor {
         "FILM_BURN_WARM" -> TransitionRegistrations.FILM_BURN_WARM
         "FILM_BURN_HEAVY" -> TransitionRegistrations.FILM_BURN_HEAVY
         else -> TransitionRegistrations.FILM_BURN
+    }
+
+    private fun glitchIdFor(raw: String): TransitionId = when (raw.uppercase()) {
+        "GLITCH_DIGITAL" -> TransitionRegistrations.GLITCH_DIGITAL
+        "GLITCH_RGB" -> TransitionRegistrations.GLITCH_RGB
+        "GLITCH_SCANLINE" -> TransitionRegistrations.GLITCH_SCANLINE
+        else -> TransitionRegistrations.GLITCH_PRO
     }
 
     private fun filmBurnModeFor(raw: String): FilmBurnMode = when (raw.uppercase()) {

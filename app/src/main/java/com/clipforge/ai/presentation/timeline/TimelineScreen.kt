@@ -780,6 +780,53 @@ private fun previewTransitionVisualState(
                 overlayAlpha = peak * 0.06f
             )
         }
+        is TransitionSpec.GlitchPro -> {
+            val burstRate = when (spec.mode) {
+                TransitionSpec.GlitchMode.Pro -> 12f
+                TransitionSpec.GlitchMode.Digital -> 9f
+                TransitionSpec.GlitchMode.Rgb -> 10f
+                TransitionSpec.GlitchMode.Scanline -> 14f
+            }
+            val envelope = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
+            val tBurst = kotlin.math.floor(rawProgress * burstRate) / burstRate
+            val seed = abs(kotlin.math.sin((tBurst * 91.7f) + 0.37f))
+            val forcedMid = rawProgress in 0.46f..0.54f
+            val gate = forcedMid || seed > (1f - envelope * 0.65f)
+            val amp = if (gate) envelope else 0f
+            val xBias = when (spec.mode) {
+                TransitionSpec.GlitchMode.Rgb -> 0.015f
+                TransitionSpec.GlitchMode.Scanline -> 0.010f
+                else -> 0.040f
+            }
+            val yBias = when (spec.mode) {
+                TransitionSpec.GlitchMode.Scanline -> 0.035f
+                TransitionSpec.GlitchMode.Digital -> 0.018f
+                else -> 0.010f
+            }
+            val sign = if (seed > 0.5f) 1f else -1f
+            val tint = when (spec.mode) {
+                TransitionSpec.GlitchMode.Pro -> if (seed > 0.5f) Color.Cyan else Color.Magenta
+                TransitionSpec.GlitchMode.Digital -> Color(0xFFFF4FBC)
+                TransitionSpec.GlitchMode.Rgb -> Color.Cyan
+                TransitionSpec.GlitchMode.Scanline -> Color(0xFF74D9FF)
+            }
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(
+                    alpha = if (rawProgress < 0.5f) 1f else 0f,
+                    translationX = sign * amp * widthPx * xBias,
+                    translationY = -sign * amp * heightPx * yBias,
+                    scale = if (spec.mode == TransitionSpec.GlitchMode.Digital) 1f + amp * 0.015f else 1f
+                ),
+                incoming = PreviewTransitionLayerState(
+                    alpha = if (rawProgress >= 0.5f) 1f else 0f,
+                    translationX = -sign * amp * widthPx * xBias,
+                    translationY = sign * amp * heightPx * yBias,
+                    scale = if (spec.mode == TransitionSpec.GlitchMode.Digital) 1f + amp * 0.015f else 1f
+                ),
+                overlayColor = tint,
+                overlayAlpha = (amp * 0.12f).coerceAtMost(0.12f)
+            )
+        }
     }
 }
 
@@ -4008,6 +4055,10 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.WIPE_DOWN -> "/v"
     TransitionType.MIRROR_FLIP -> "M"
     TransitionType.GLITCH -> "G"
+    TransitionType.GLITCH_PRO -> "GP"
+    TransitionType.GLITCH_DIGITAL -> "GD"
+    TransitionType.GLITCH_RGB -> "GR"
+    TransitionType.GLITCH_SCANLINE -> "GS"
     TransitionType.MOTION_BLUR -> "MB"
     TransitionType.MOTION_BLUR_LEFT -> "M<"
     TransitionType.MOTION_BLUR_RIGHT -> "M>"
@@ -4120,6 +4171,10 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.TUNNEL,
     TransitionType.PRISM -> Brush.linearGradient(listOf(Color(0xFF6C5CFF), Color(0xFF20D4F5)))
     TransitionType.GLITCH,
+    TransitionType.GLITCH_PRO,
+    TransitionType.GLITCH_DIGITAL,
+    TransitionType.GLITCH_RGB,
+    TransitionType.GLITCH_SCANLINE,
     TransitionType.RGB_SPLIT,
     TransitionType.CHROMATIC_ABERRATION -> Brush.linearGradient(listOf(Color(0xFFFF6B9A), Color(0xFF6C5CFF)))
 }
