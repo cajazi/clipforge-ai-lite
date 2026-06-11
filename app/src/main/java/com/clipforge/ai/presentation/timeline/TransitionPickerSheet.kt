@@ -98,6 +98,10 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.WIPE_DOWN -> "/v"
     TransitionType.MIRROR_FLIP -> "M"
     TransitionType.GLITCH -> "G"
+    TransitionType.GLITCH_PRO -> "GP"
+    TransitionType.GLITCH_DIGITAL -> "GD"
+    TransitionType.GLITCH_RGB -> "GR"
+    TransitionType.GLITCH_SCANLINE -> "GS"
     TransitionType.RGB_SPLIT -> "RGB"
     TransitionType.CHROMATIC_ABERRATION -> "CA"
     TransitionType.CUBE_LEFT -> "3L"
@@ -144,6 +148,10 @@ private fun transitionDisplayName(type: TransitionType): String = when (type) {
     TransitionType.ZOOM_OUT -> "Zoom Out"
     TransitionType.BLUR -> "Blur"
     TransitionType.GLITCH -> "Glitch"
+    TransitionType.GLITCH_PRO -> "Glitch Pro"
+    TransitionType.GLITCH_DIGITAL -> "Glitch Digital"
+    TransitionType.GLITCH_RGB -> "Glitch RGB"
+    TransitionType.GLITCH_SCANLINE -> "Glitch Scanline"
     TransitionType.SPIN -> "Spin"
     TransitionType.FLASH -> "Flash"
     TransitionType.FLASH_WARM -> "Flash Warm"
@@ -193,6 +201,10 @@ private val BLUR_TYPES = listOf(
     TransitionType.GAUSSIAN_BLUR
 )
 private val GLITCH_TYPES = listOf(
+    TransitionType.GLITCH_PRO,
+    TransitionType.GLITCH_DIGITAL,
+    TransitionType.GLITCH_RGB,
+    TransitionType.GLITCH_SCANLINE,
     TransitionType.GLITCH,
     TransitionType.RGB_SPLIT,
     TransitionType.CHROMATIC_ABERRATION

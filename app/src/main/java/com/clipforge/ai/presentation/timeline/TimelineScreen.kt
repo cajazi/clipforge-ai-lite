@@ -3715,6 +3715,10 @@ private fun CapCutTransitionPanel(
             TransitionType.MOTION_BLUR_DOWN,
             TransitionType.GAUSSIAN_BLUR,
             TransitionType.GLITCH,
+            TransitionType.GLITCH_PRO,
+            TransitionType.GLITCH_DIGITAL,
+            TransitionType.GLITCH_RGB,
+            TransitionType.GLITCH_SCANLINE,
             TransitionType.RGB_SPLIT,
             TransitionType.CHROMATIC_ABERRATION,
             TransitionType.SPIN,
@@ -3774,7 +3778,15 @@ private fun CapCutTransitionPanel(
                 TransitionType.MOTION_BLUR_DOWN,
                 TransitionType.GAUSSIAN_BLUR
             )
-            "Glitch" -> listOf(TransitionType.GLITCH, TransitionType.RGB_SPLIT, TransitionType.CHROMATIC_ABERRATION)
+            "Glitch" -> listOf(
+                TransitionType.GLITCH_PRO,
+                TransitionType.GLITCH_DIGITAL,
+                TransitionType.GLITCH_RGB,
+                TransitionType.GLITCH_SCANLINE,
+                TransitionType.GLITCH,
+                TransitionType.RGB_SPLIT,
+                TransitionType.CHROMATIC_ABERRATION
+            )
             "Camera" -> listOf(
                 TransitionType.SPIN,
                 TransitionType.ROTATE,
