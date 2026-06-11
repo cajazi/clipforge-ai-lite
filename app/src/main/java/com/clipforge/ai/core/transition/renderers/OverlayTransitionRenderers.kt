@@ -12,6 +12,8 @@ import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
 import com.clipforge.ai.core.gl.FlipBitmapOverlay
 import com.clipforge.ai.core.gl.FlipDirection
 import com.clipforge.ai.core.gl.FlipGlEffect
+import com.clipforge.ai.core.gl.FlashColorOverlay
+import com.clipforge.ai.core.gl.FlashRevealOverlay
 import com.clipforge.ai.core.gl.PageTurnDirection
 import com.clipforge.ai.core.gl.PageTurnGlEffect
 import com.clipforge.ai.core.gl.PushGlEffect
@@ -92,6 +94,24 @@ class DipToColorTransitionRenderer : TransitionRenderer {
         val itemB = OverlayRenderSupport.overlayItem(ctx.pathB, ctx.bHeadStartMs, bHeadEndMs, OverlayEffect(listOf(overlayB)))
 
         return listOf(itemA, itemB)
+    }
+}
+
+/** Flash white/black/warm/blue. Hard A/B swap hidden under a full-screen burst. */
+@UnstableApi
+class FlashTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Flash cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+
+        val colorInt = ctx.param(TransitionParamKeys.FLASH_COLOR_INT)?.toIntOrNull()
+            ?: android.graphics.Color.WHITE
+        val reveal = FlashRevealOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs)
+        val flash = FlashColorOverlay(colorInt, ctx.compositionStartUs, ctx.compositionEndUs)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, OverlayEffect(listOf(reveal, flash))))
     }
 }
 

@@ -105,6 +105,13 @@ object CrossfadeExecutor {
                 TransitionParamKeys.B_HEAD_END_MS to op.bHeadEndMs.toString()
             )
         )
+        is CrossfadeRenderPlan.Op.Flash -> Dispatch(
+            id = flashIdFor(op.type),
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.FLASH_COLOR_INT to op.colorInt.toString())
+        )
         is CrossfadeRenderPlan.Op.Slide -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "SLIDE_RIGHT" -> TransitionRegistrations.SLIDE_RIGHT
@@ -296,6 +303,13 @@ object CrossfadeExecutor {
         else -> PageTurnDirection.LEFT
     }
 
+    private fun flashIdFor(raw: String): TransitionId = when (raw.uppercase()) {
+        "FLASH_BLACK" -> TransitionRegistrations.FLASH_BLACK
+        "FLASH_WARM" -> TransitionRegistrations.FLASH_WARM
+        "FLASH_BLUE" -> TransitionRegistrations.FLASH_BLUE
+        else -> TransitionRegistrations.FLASH_WHITE
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -304,6 +318,8 @@ object CrossfadeExecutor {
                 "op[$index]=XFADE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.crossfadeMs}"
             is CrossfadeRenderPlan.Op.DipToColor ->
                 "op[$index]=DIP pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} bHeadEndMs=${op.bHeadEndMs} halfMs=${op.halfDurationMs} color=${op.colorInt}"
+            is CrossfadeRenderPlan.Op.Flash ->
+                "op[$index]=FLASH pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} type=${op.type} color=${op.colorInt}"
             is CrossfadeRenderPlan.Op.Slide ->
                 "op[$index]=SLIDE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Push ->
@@ -481,6 +497,48 @@ object CrossfadeExecutor {
                         Log.d(TAG, "DIP_ITEM_B_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "DIP color=${op.colorInt} half=${half}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]@$fadeOutStartUs B=${op.pathB.substringAfterLast('/')}[${op.bHeadStartMs}..${op.bHeadEndMs}]@$fadeInStartUs fallback=NO")
                         runningTimeMs += half
+                    }
+                    is CrossfadeRenderPlan.Op.Flash -> {
+                        onStage("Preparing flash transition...")
+                        val flashStartUs = runningTimeMs * 1000L
+                        val flashEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val flashFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "FLASH_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$flashFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = flashFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "FLASH_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "FLASH_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Flash cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val reveal = FlashRevealOverlay(cache, flashStartUs, flashEndUs)
+                        val flash = FlashColorOverlay(op.colorInt, flashStartUs, flashEndUs)
+                        Log.d(TAG, "FLASH_ITEM_CREATE_BEFORE index=$index type=${op.type} color=${op.colorInt} pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(OverlayEffect(listOf(reveal, flash)))))
+                                .build()
+                        )
+                        Log.d(TAG, "FLASH_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "FLASH type=${op.type} color=${op.colorInt} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs flash=[$flashStartUs..$flashEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.Slide -> {
                         onStage("Preparing slide transition...")

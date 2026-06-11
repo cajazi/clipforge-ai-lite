@@ -533,6 +533,12 @@ private fun previewTransitionVisualState(
                 overlayAlpha = if (firstHalf) dipOut else dipIn
             )
         }
+        is TransitionSpec.Flash -> PreviewTransitionVisualState(
+            outgoing = PreviewTransitionLayerState(alpha = if (rawProgress < 0.5f) 1f else 0f),
+            incoming = PreviewTransitionLayerState(alpha = if (rawProgress >= 0.5f) 1f else 0f),
+            overlayColor = flashPreviewColor(spec.color),
+            overlayAlpha = flashPreviewAlpha(rawProgress)
+        )
         is TransitionSpec.Slide -> {
             val remaining = 1f - p
             val incoming = when (spec.direction) {
@@ -760,6 +766,29 @@ private fun previewTransitionVisualState(
             )
         }
     }
+}
+
+private val FLASH_PREVIEW_TYPES = setOf(
+    TransitionType.FLASH,
+    TransitionType.FLASH_BLACK,
+    TransitionType.FLASH_WARM,
+    TransitionType.FLASH_BLUE
+)
+
+private fun flashPreviewColor(color: TransitionSpec.FlashColor): Color = when (color) {
+    TransitionSpec.FlashColor.White -> Color.White
+    TransitionSpec.FlashColor.Black -> Color.Black
+    TransitionSpec.FlashColor.Warm -> Color(0xFFFFD680)
+    TransitionSpec.FlashColor.Blue -> Color(0xFF78BEFF)
+}
+
+private fun flashPreviewAlpha(progress: Float): Float {
+    val t = progress.coerceIn(0f, 1f)
+    return when {
+        t <= 0.38f -> TransitionSpec.smoothstep(t / 0.38f)
+        t <= 0.52f -> 1f
+        else -> 1f - TransitionSpec.smoothstep((t - 0.52f) / 0.48f)
+    }.coerceIn(0f, 1f)
 }
 
 @Composable
@@ -1065,7 +1094,10 @@ private fun TransitionPreviewOverlay(
             TransitionType.FADE_WHITE -> 1f - (progress * 0.65f)
             TransitionType.ZOOM_OUT -> 1f - progress
             TransitionType.BLUR -> 1f - (progress * 0.35f)
-            TransitionType.FLASH -> 1f - (progress * 0.18f)
+            TransitionType.FLASH,
+            TransitionType.FLASH_BLACK,
+            TransitionType.FLASH_WARM,
+            TransitionType.FLASH_BLUE -> 1f - (progress * 0.18f)
             else -> 1f
         }.coerceIn(0f, 1f)
         val incomingAlpha = when (transition.transitionType) {
@@ -1092,6 +1124,9 @@ private fun TransitionPreviewOverlay(
             TransitionType.PAGE_TURN_UP,
             TransitionType.PAGE_TURN_DOWN,
             TransitionType.FLASH,
+            TransitionType.FLASH_BLACK,
+            TransitionType.FLASH_WARM,
+            TransitionType.FLASH_BLUE,
             TransitionType.WIPE,
             TransitionType.SLIDE_UP,
             TransitionType.SLIDE_DOWN,
@@ -1156,12 +1191,14 @@ private fun TransitionPreviewOverlay(
                     .background(outgoingOverlay)
             )
         }
-        if (transition.transitionType == TransitionType.FLASH) {
-            val flashAlpha = (1f - kotlin.math.abs(0.5f - progress) * 2f).coerceIn(0f, 1f)
+        if (transition.transitionType in FLASH_PREVIEW_TYPES) {
+            val flashSpec = TransitionSpec.forType(transition.transitionType) as? TransitionSpec.Flash
+            val flashAlpha = flashPreviewAlpha(progress)
+            val flashColor = flashPreviewColor(flashSpec?.color ?: TransitionSpec.FlashColor.White)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.White.copy(alpha = flashAlpha))
+                    .background(flashColor.copy(alpha = flashAlpha))
             )
         }
         if (transition.transitionType == TransitionType.BLUR) {
@@ -3600,12 +3637,16 @@ private fun CapCutTransitionPanel(
             TransitionType.WHIP_PAN_DOWN,
             TransitionType.FLASH,
             TransitionType.FLASH_BLACK,
+            TransitionType.FLASH_WARM,
+            TransitionType.FLASH_BLUE,
             TransitionType.BOUNCE,
             TransitionType.SHAKE,
             TransitionType.SWING,
             TransitionType.POP,
             TransitionType.CUBE_LEFT,
             TransitionType.CUBE_RIGHT,
+            TransitionType.CUBE_UP,
+            TransitionType.CUBE_DOWN,
             TransitionType.FLIP_LEFT,
             TransitionType.FLIP_RIGHT,
             TransitionType.FLIP_UP,
@@ -3651,10 +3692,21 @@ private fun CapCutTransitionPanel(
                 TransitionType.WHIP_PAN_UP,
                 TransitionType.WHIP_PAN_DOWN
             )
-            "Effects" -> listOf(TransitionType.FLASH, TransitionType.FLASH_BLACK, TransitionType.BOUNCE, TransitionType.SHAKE, TransitionType.SWING, TransitionType.POP)
+            "Effects" -> listOf(
+                TransitionType.FLASH,
+                TransitionType.FLASH_BLACK,
+                TransitionType.FLASH_WARM,
+                TransitionType.FLASH_BLUE,
+                TransitionType.BOUNCE,
+                TransitionType.SHAKE,
+                TransitionType.SWING,
+                TransitionType.POP
+            )
             "3D" -> listOf(
                 TransitionType.CUBE_LEFT,
                 TransitionType.CUBE_RIGHT,
+                TransitionType.CUBE_UP,
+                TransitionType.CUBE_DOWN,
                 TransitionType.FLIP_LEFT,
                 TransitionType.FLIP_RIGHT,
                 TransitionType.FLIP_UP,
@@ -3894,6 +3946,8 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.BLUR -> "B"
     TransitionType.SPIN -> "S"
     TransitionType.FLASH -> "*"
+    TransitionType.FLASH_WARM -> "W*"
+    TransitionType.FLASH_BLUE -> "U*"
     TransitionType.WIPE -> "/"
     TransitionType.SLIDE_UP -> "^"
     TransitionType.SLIDE_DOWN -> "v"
@@ -3961,6 +4015,8 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.ZOOM_OUT -> Brush.linearGradient(listOf(Color(0xFF6C5CFF), Color(0xFF20D4F5)))
     TransitionType.FLASH,
     TransitionType.FLASH_BLACK,
+    TransitionType.FLASH_WARM,
+    TransitionType.FLASH_BLUE,
     TransitionType.BOUNCE,
     TransitionType.SHAKE,
     TransitionType.SWING,

@@ -80,6 +80,8 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.WHIP_PAN_DOWN -> "v~"
     TransitionType.FLASH -> "*"
     TransitionType.FLASH_BLACK -> "B*"
+    TransitionType.FLASH_WARM -> "W*"
+    TransitionType.FLASH_BLUE -> "U*"
     TransitionType.BOUNCE -> "Bo"
     TransitionType.SHAKE -> "Sh"
     TransitionType.SWING -> "Sw"
@@ -141,6 +143,8 @@ private fun transitionDisplayName(type: TransitionType): String = when (type) {
     TransitionType.GLITCH -> "Glitch"
     TransitionType.SPIN -> "Spin"
     TransitionType.FLASH -> "Flash"
+    TransitionType.FLASH_WARM -> "Flash Warm"
+    TransitionType.FLASH_BLUE -> "Flash Blue"
     TransitionType.WIPE -> "Wipe"
     TransitionType.WIPE_UP -> "Wipe Up"
     TransitionType.WIPE_DOWN -> "Wipe Down"
@@ -199,6 +203,8 @@ private val CAMERA_TYPES = listOf(
 private val EFFECT_TYPES = listOf(
     TransitionType.FLASH,
     TransitionType.FLASH_BLACK,
+    TransitionType.FLASH_WARM,
+    TransitionType.FLASH_BLUE,
     TransitionType.BOUNCE,
     TransitionType.SHAKE,
     TransitionType.SWING,

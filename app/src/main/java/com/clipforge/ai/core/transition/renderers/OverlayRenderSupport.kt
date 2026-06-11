@@ -95,4 +95,5 @@ internal object TransitionParamKeys {
     const val COLOR_INT = "colorInt"    // dip color as Int string
     const val HALF_DURATION_MS = "halfDurationMs"
     const val B_HEAD_END_MS = "bHeadEndMs"
+    const val FLASH_COLOR_INT = "flashColorInt"
 }

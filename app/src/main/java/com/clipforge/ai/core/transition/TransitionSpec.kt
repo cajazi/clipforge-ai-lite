@@ -16,6 +16,7 @@ object TransitionSpec {
         None,
         Crossfade,
         Dip,
+        Flash,
         Slide,
         Push,
         Zoom,
@@ -31,6 +32,13 @@ object TransitionSpec {
     enum class DipColor {
         Black,
         White
+    }
+
+    enum class FlashColor {
+        White,
+        Black,
+        Warm,
+        Blue
     }
 
     enum class SlideDirection {
@@ -82,6 +90,12 @@ object TransitionSpec {
     sealed class Dip(val color: DipColor) : Spec(Family.Dip, exportable = true) {
         object Black : Dip(DipColor.Black)
         object White : Dip(DipColor.White)
+    }
+    sealed class Flash(val color: FlashColor) : Spec(Family.Flash, exportable = true) {
+        object White : Flash(FlashColor.White)
+        object Black : Flash(FlashColor.Black)
+        object Warm : Flash(FlashColor.Warm)
+        object Blue : Flash(FlashColor.Blue)
     }
 
     sealed class Slide(val direction: SlideDirection) : Spec(Family.Slide, exportable = true) {
@@ -147,6 +161,10 @@ object TransitionSpec {
         TransitionType.FADE,
         TransitionType.FADE_BLACK -> Dip.Black
         TransitionType.FADE_WHITE -> Dip.White
+        TransitionType.FLASH -> Flash.White
+        TransitionType.FLASH_BLACK -> Flash.Black
+        TransitionType.FLASH_WARM -> Flash.Warm
+        TransitionType.FLASH_BLUE -> Flash.Blue
         TransitionType.SLIDE_LEFT -> Slide.Left
         TransitionType.SLIDE_RIGHT -> Slide.Right
         TransitionType.SLIDE_UP -> Slide.Up

@@ -75,6 +75,12 @@ object OverlayRendererParityHarness {
                                 TransitionParamKeys.B_HEAD_END_MS to op.bHeadEndMs.toString()
                             ),
                             cleanups = cleanups).also { runningTimeMs += op.halfDurationMs * 2L }
+                    is CrossfadeRenderPlan.Op.Flash ->
+                        results += runOp(context, index, "FLASH", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, flashId(op.type),
+                            expectedItems = 1,
+                            params = mapOf(TransitionParamKeys.FLASH_COLOR_INT to op.colorInt.toString()),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.Slide ->
                         results += runOp(context, index, "SLIDE", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, TransitionRegistrations.SLIDE_LEFT,
@@ -178,6 +184,13 @@ object OverlayRendererParityHarness {
         "MOTION_BLUR_UP" -> TransitionRegistrations.MOTION_BLUR_UP
         "MOTION_BLUR_DOWN" -> TransitionRegistrations.MOTION_BLUR_DOWN
         else -> TransitionRegistrations.MOTION_BLUR_LEFT
+    }
+
+    private fun flashId(type: String): TransitionId = when (type.uppercase()) {
+        "FLASH_BLACK" -> TransitionRegistrations.FLASH_BLACK
+        "FLASH_WARM" -> TransitionRegistrations.FLASH_WARM
+        "FLASH_BLUE" -> TransitionRegistrations.FLASH_BLUE
+        else -> TransitionRegistrations.FLASH_WHITE
     }
 
     private fun runOp(

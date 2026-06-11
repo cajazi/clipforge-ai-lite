@@ -4,6 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.CubeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.FlashTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.FlipTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.MotionBlurTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.PageTurnTransitionRenderer
@@ -32,6 +33,10 @@ object TransitionRegistrations {
     val DISSOLVE = TransitionId("dissolve")
     val FADE_BLACK = TransitionId("fade_black")
     val FADE_WHITE = TransitionId("fade_white")
+    val FLASH_WHITE = TransitionId("flash_white")
+    val FLASH_BLACK = TransitionId("flash_black")
+    val FLASH_WARM = TransitionId("flash_warm")
+    val FLASH_BLUE = TransitionId("flash_blue")
     val SLIDE_LEFT = TransitionId("slide_left")
     val SLIDE_RIGHT = TransitionId("slide_right")
     val SLIDE_UP = TransitionId("slide_up")
@@ -74,6 +79,10 @@ object TransitionRegistrations {
         TransitionType.DISSOLVE, TransitionType.CROSS_DISSOLVE -> DISSOLVE
         TransitionType.FADE, TransitionType.FADE_BLACK -> FADE_BLACK
         TransitionType.FADE_WHITE -> FADE_WHITE
+        TransitionType.FLASH -> FLASH_WHITE
+        TransitionType.FLASH_BLACK -> FLASH_BLACK
+        TransitionType.FLASH_WARM -> FLASH_WARM
+        TransitionType.FLASH_BLUE -> FLASH_BLUE
         TransitionType.SLIDE_LEFT -> SLIDE_LEFT
         TransitionType.SLIDE_RIGHT -> SLIDE_RIGHT
         TransitionType.SLIDE_UP -> SLIDE_UP
@@ -114,6 +123,7 @@ object TransitionRegistrations {
     fun registerBuiltIns(registry: TransitionRegistry = TransitionRegistry) {
         val crossfade = CrossfadeTransitionRenderer()
         val dip = DipToColorTransitionRenderer()
+        val flash = FlashTransitionRenderer()
         val slide = SlideTransitionRenderer()
         val push = PushTransitionRenderer()
         val zoom = ZoomTransitionRenderer()
@@ -153,6 +163,7 @@ object TransitionRegistrations {
         // stageMessage strings mirror the legacy CrossfadeExecutor onStage(...) text exactly.
         val sDissolve = "Preparing dissolve transition..."
         val sFade = "Preparing fade transition..."
+        val sFlash = "Preparing flash transition..."
         val sSlide = "Preparing slide transition..."
         val sPush = "Preparing push transition..."
         val sZoom = "Preparing zoom transition..."
@@ -166,6 +177,10 @@ object TransitionRegistrations {
         reg(DISSOLVE, "Dissolve", TransitionCategory.DISSOLVE, TimingModel.Overlap, crossfade, sDissolve)
         reg(FADE_BLACK, "Fade Black", TransitionCategory.FADE, TimingModel.SequentialDip, dip, sFade)
         reg(FADE_WHITE, "Fade White", TransitionCategory.FADE, TimingModel.SequentialDip, dip, sFade)
+        reg(FLASH_WHITE, "Flash", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
+        reg(FLASH_BLACK, "Flash Black", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
+        reg(FLASH_WARM, "Flash Warm", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
+        reg(FLASH_BLUE, "Flash Blue", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
         reg(SLIDE_LEFT, "Slide Left", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
         reg(SLIDE_RIGHT, "Slide Right", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
         reg(SLIDE_UP, "Slide Up", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)

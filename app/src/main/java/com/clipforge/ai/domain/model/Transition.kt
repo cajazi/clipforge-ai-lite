@@ -29,6 +29,8 @@ enum class TransitionType(val label: String, val isPremium: Boolean) {
     CROSS_DISSOLVE("Dissolve", false),
     FLASH("Flash White", false),
     FLASH_BLACK("Flash Black", false),
+    FLASH_WARM("Flash Warm", false),
+    FLASH_BLUE("Flash Blue", false),
     BOUNCE("Bounce", false),
     SHAKE("Shake", false),
     SWING("Swing", false),
