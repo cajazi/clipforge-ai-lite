@@ -539,6 +539,21 @@ private fun previewTransitionVisualState(
             overlayColor = flashPreviewColor(spec.color),
             overlayAlpha = flashPreviewAlpha(rawProgress)
         )
+        is TransitionSpec.FilmBurn -> {
+            val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
+            val reveal = TransitionSpec.smoothstep((rawProgress * 1.18f).coerceIn(0f, 1f))
+            val overlayAlpha = when (spec.mode) {
+                TransitionSpec.FilmBurnMode.Classic -> 0.34f
+                TransitionSpec.FilmBurnMode.Warm -> 0.42f
+                TransitionSpec.FilmBurnMode.Heavy -> 0.50f
+            } * peak
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(alpha = 1f - (0.20f * reveal)),
+                incoming = PreviewTransitionLayerState(alpha = reveal),
+                overlayColor = filmBurnPreviewColor(spec.mode),
+                overlayAlpha = overlayAlpha
+            )
+        }
         is TransitionSpec.Slide -> {
             val remaining = 1f - p
             val incoming = when (spec.direction) {
@@ -775,6 +790,12 @@ private val FLASH_PREVIEW_TYPES = setOf(
     TransitionType.FLASH_BLUE
 )
 
+private val FILM_BURN_PREVIEW_TYPES = setOf(
+    TransitionType.FILM_BURN,
+    TransitionType.FILM_BURN_WARM,
+    TransitionType.FILM_BURN_HEAVY
+)
+
 private fun flashPreviewColor(color: TransitionSpec.FlashColor): Color = when (color) {
     TransitionSpec.FlashColor.White -> Color.White
     TransitionSpec.FlashColor.Black -> Color.Black
@@ -789,6 +810,12 @@ private fun flashPreviewAlpha(progress: Float): Float {
         t <= 0.52f -> 1f
         else -> 1f - TransitionSpec.smoothstep((t - 0.52f) / 0.48f)
     }.coerceIn(0f, 1f)
+}
+
+private fun filmBurnPreviewColor(mode: TransitionSpec.FilmBurnMode): Color = when (mode) {
+    TransitionSpec.FilmBurnMode.Classic -> Color(0xFFFF9A3D)
+    TransitionSpec.FilmBurnMode.Warm -> Color(0xFFFFC76A)
+    TransitionSpec.FilmBurnMode.Heavy -> Color(0xFF2A1208)
 }
 
 @Composable
@@ -1098,6 +1125,9 @@ private fun TransitionPreviewOverlay(
             TransitionType.FLASH_BLACK,
             TransitionType.FLASH_WARM,
             TransitionType.FLASH_BLUE -> 1f - (progress * 0.18f)
+            TransitionType.FILM_BURN,
+            TransitionType.FILM_BURN_WARM,
+            TransitionType.FILM_BURN_HEAVY -> 1f - (progress * 0.22f)
             else -> 1f
         }.coerceIn(0f, 1f)
         val incomingAlpha = when (transition.transitionType) {
@@ -1127,6 +1157,9 @@ private fun TransitionPreviewOverlay(
             TransitionType.FLASH_BLACK,
             TransitionType.FLASH_WARM,
             TransitionType.FLASH_BLUE,
+            TransitionType.FILM_BURN,
+            TransitionType.FILM_BURN_WARM,
+            TransitionType.FILM_BURN_HEAVY,
             TransitionType.WIPE,
             TransitionType.SLIDE_UP,
             TransitionType.SLIDE_DOWN,
@@ -1199,6 +1232,15 @@ private fun TransitionPreviewOverlay(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(flashColor.copy(alpha = flashAlpha))
+            )
+        }
+        if (transition.transitionType in FILM_BURN_PREVIEW_TYPES) {
+            val burnSpec = TransitionSpec.forType(transition.transitionType) as? TransitionSpec.FilmBurn
+            val peak = (1f - kotlin.math.abs((progress * 2f) - 1f)).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(filmBurnPreviewColor(burnSpec?.mode ?: TransitionSpec.FilmBurnMode.Classic).copy(alpha = peak * 0.38f))
             )
         }
         if (transition.transitionType == TransitionType.BLUR) {
@@ -3639,6 +3681,9 @@ private fun CapCutTransitionPanel(
             TransitionType.FLASH_BLACK,
             TransitionType.FLASH_WARM,
             TransitionType.FLASH_BLUE,
+            TransitionType.FILM_BURN,
+            TransitionType.FILM_BURN_WARM,
+            TransitionType.FILM_BURN_HEAVY,
             TransitionType.BOUNCE,
             TransitionType.SHAKE,
             TransitionType.SWING,
@@ -3697,6 +3742,9 @@ private fun CapCutTransitionPanel(
                 TransitionType.FLASH_BLACK,
                 TransitionType.FLASH_WARM,
                 TransitionType.FLASH_BLUE,
+                TransitionType.FILM_BURN,
+                TransitionType.FILM_BURN_WARM,
+                TransitionType.FILM_BURN_HEAVY,
                 TransitionType.BOUNCE,
                 TransitionType.SHAKE,
                 TransitionType.SWING,
@@ -3948,6 +3996,9 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.FLASH -> "*"
     TransitionType.FLASH_WARM -> "W*"
     TransitionType.FLASH_BLUE -> "U*"
+    TransitionType.FILM_BURN -> "FB"
+    TransitionType.FILM_BURN_WARM -> "FW"
+    TransitionType.FILM_BURN_HEAVY -> "FH"
     TransitionType.WIPE -> "/"
     TransitionType.SLIDE_UP -> "^"
     TransitionType.SLIDE_DOWN -> "v"
@@ -4017,6 +4068,9 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.FLASH_BLACK,
     TransitionType.FLASH_WARM,
     TransitionType.FLASH_BLUE,
+    TransitionType.FILM_BURN,
+    TransitionType.FILM_BURN_WARM,
+    TransitionType.FILM_BURN_HEAVY,
     TransitionType.BOUNCE,
     TransitionType.SHAKE,
     TransitionType.SWING,

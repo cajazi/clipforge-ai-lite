@@ -82,6 +82,9 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.FLASH_BLACK -> "B*"
     TransitionType.FLASH_WARM -> "W*"
     TransitionType.FLASH_BLUE -> "U*"
+    TransitionType.FILM_BURN -> "FB"
+    TransitionType.FILM_BURN_WARM -> "FW"
+    TransitionType.FILM_BURN_HEAVY -> "FH"
     TransitionType.BOUNCE -> "Bo"
     TransitionType.SHAKE -> "Sh"
     TransitionType.SWING -> "Sw"
@@ -145,6 +148,9 @@ private fun transitionDisplayName(type: TransitionType): String = when (type) {
     TransitionType.FLASH -> "Flash"
     TransitionType.FLASH_WARM -> "Flash Warm"
     TransitionType.FLASH_BLUE -> "Flash Blue"
+    TransitionType.FILM_BURN -> "Film Burn"
+    TransitionType.FILM_BURN_WARM -> "Film Burn Warm"
+    TransitionType.FILM_BURN_HEAVY -> "Film Burn Heavy"
     TransitionType.WIPE -> "Wipe"
     TransitionType.WIPE_UP -> "Wipe Up"
     TransitionType.WIPE_DOWN -> "Wipe Down"
@@ -205,6 +211,9 @@ private val EFFECT_TYPES = listOf(
     TransitionType.FLASH_BLACK,
     TransitionType.FLASH_WARM,
     TransitionType.FLASH_BLUE,
+    TransitionType.FILM_BURN,
+    TransitionType.FILM_BURN_WARM,
+    TransitionType.FILM_BURN_HEAVY,
     TransitionType.BOUNCE,
     TransitionType.SHAKE,
     TransitionType.SWING,

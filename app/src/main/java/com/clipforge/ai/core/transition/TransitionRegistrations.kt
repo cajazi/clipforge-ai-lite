@@ -4,6 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.CubeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.FilmBurnTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.FlashTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.FlipTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.MotionBlurTransitionRenderer
@@ -37,6 +38,9 @@ object TransitionRegistrations {
     val FLASH_BLACK = TransitionId("flash_black")
     val FLASH_WARM = TransitionId("flash_warm")
     val FLASH_BLUE = TransitionId("flash_blue")
+    val FILM_BURN = TransitionId("film_burn")
+    val FILM_BURN_WARM = TransitionId("film_burn_warm")
+    val FILM_BURN_HEAVY = TransitionId("film_burn_heavy")
     val SLIDE_LEFT = TransitionId("slide_left")
     val SLIDE_RIGHT = TransitionId("slide_right")
     val SLIDE_UP = TransitionId("slide_up")
@@ -83,6 +87,9 @@ object TransitionRegistrations {
         TransitionType.FLASH_BLACK -> FLASH_BLACK
         TransitionType.FLASH_WARM -> FLASH_WARM
         TransitionType.FLASH_BLUE -> FLASH_BLUE
+        TransitionType.FILM_BURN -> FILM_BURN
+        TransitionType.FILM_BURN_WARM -> FILM_BURN_WARM
+        TransitionType.FILM_BURN_HEAVY -> FILM_BURN_HEAVY
         TransitionType.SLIDE_LEFT -> SLIDE_LEFT
         TransitionType.SLIDE_RIGHT -> SLIDE_RIGHT
         TransitionType.SLIDE_UP -> SLIDE_UP
@@ -124,6 +131,7 @@ object TransitionRegistrations {
         val crossfade = CrossfadeTransitionRenderer()
         val dip = DipToColorTransitionRenderer()
         val flash = FlashTransitionRenderer()
+        val filmBurn = FilmBurnTransitionRenderer()
         val slide = SlideTransitionRenderer()
         val push = PushTransitionRenderer()
         val zoom = ZoomTransitionRenderer()
@@ -164,6 +172,7 @@ object TransitionRegistrations {
         val sDissolve = "Preparing dissolve transition..."
         val sFade = "Preparing fade transition..."
         val sFlash = "Preparing flash transition..."
+        val sFilmBurn = "Preparing film burn transition..."
         val sSlide = "Preparing slide transition..."
         val sPush = "Preparing push transition..."
         val sZoom = "Preparing zoom transition..."
@@ -181,6 +190,9 @@ object TransitionRegistrations {
         reg(FLASH_BLACK, "Flash Black", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
         reg(FLASH_WARM, "Flash Warm", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
         reg(FLASH_BLUE, "Flash Blue", TransitionCategory.FADE, TimingModel.Overlap, flash, sFlash)
+        reg(FILM_BURN, "Film Burn", TransitionCategory.FADE, TimingModel.Overlap, filmBurn, sFilmBurn)
+        reg(FILM_BURN_WARM, "Film Burn Warm", TransitionCategory.FADE, TimingModel.Overlap, filmBurn, sFilmBurn)
+        reg(FILM_BURN_HEAVY, "Film Burn Heavy", TransitionCategory.FADE, TimingModel.Overlap, filmBurn, sFilmBurn)
         reg(SLIDE_LEFT, "Slide Left", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
         reg(SLIDE_RIGHT, "Slide Right", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)
         reg(SLIDE_UP, "Slide Up", TransitionCategory.MOTION, TimingModel.Overlap, slide, sSlide)

@@ -17,6 +17,7 @@ object TransitionSpec {
         Crossfade,
         Dip,
         Flash,
+        FilmBurn,
         Slide,
         Push,
         Zoom,
@@ -39,6 +40,12 @@ object TransitionSpec {
         Black,
         Warm,
         Blue
+    }
+
+    enum class FilmBurnMode {
+        Classic,
+        Warm,
+        Heavy
     }
 
     enum class SlideDirection {
@@ -96,6 +103,11 @@ object TransitionSpec {
         object Black : Flash(FlashColor.Black)
         object Warm : Flash(FlashColor.Warm)
         object Blue : Flash(FlashColor.Blue)
+    }
+    sealed class FilmBurn(val mode: FilmBurnMode) : Spec(Family.FilmBurn, exportable = true) {
+        object Classic : FilmBurn(FilmBurnMode.Classic)
+        object Warm : FilmBurn(FilmBurnMode.Warm)
+        object Heavy : FilmBurn(FilmBurnMode.Heavy)
     }
 
     sealed class Slide(val direction: SlideDirection) : Spec(Family.Slide, exportable = true) {
@@ -165,6 +177,9 @@ object TransitionSpec {
         TransitionType.FLASH_BLACK -> Flash.Black
         TransitionType.FLASH_WARM -> Flash.Warm
         TransitionType.FLASH_BLUE -> Flash.Blue
+        TransitionType.FILM_BURN -> FilmBurn.Classic
+        TransitionType.FILM_BURN_WARM -> FilmBurn.Warm
+        TransitionType.FILM_BURN_HEAVY -> FilmBurn.Heavy
         TransitionType.SLIDE_LEFT -> Slide.Left
         TransitionType.SLIDE_RIGHT -> Slide.Right
         TransitionType.SLIDE_UP -> Slide.Up

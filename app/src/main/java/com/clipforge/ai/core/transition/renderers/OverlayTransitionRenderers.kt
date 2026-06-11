@@ -9,6 +9,8 @@ import com.clipforge.ai.core.gl.CubeGlEffect
 import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
 import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
+import com.clipforge.ai.core.gl.FilmBurnGlEffect
+import com.clipforge.ai.core.gl.FilmBurnMode
 import com.clipforge.ai.core.gl.FlipBitmapOverlay
 import com.clipforge.ai.core.gl.FlipDirection
 import com.clipforge.ai.core.gl.FlipGlEffect
@@ -112,6 +114,27 @@ class FlashTransitionRenderer : TransitionRenderer {
         val reveal = FlashRevealOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs)
         val flash = FlashColorOverlay(colorInt, ctx.compositionStartUs, ctx.compositionEndUs)
         return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, OverlayEffect(listOf(reveal, flash))))
+    }
+}
+
+/** Film Burn classic/warm/heavy. Dual-texture shader reveals B through an organic burn mask. */
+@UnstableApi
+class FilmBurnTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Film burn cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val mode = filmBurnModeFor(ctx.param(TransitionParamKeys.FILM_BURN_MODE) ?: "FILM_BURN")
+        val effect = FilmBurnGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, cache, mode)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect))
+    }
+
+    private fun filmBurnModeFor(raw: String): FilmBurnMode = when (raw.uppercase()) {
+        "FILM_BURN_WARM" -> FilmBurnMode.WARM
+        "FILM_BURN_HEAVY" -> FilmBurnMode.HEAVY
+        else -> FilmBurnMode.CLASSIC
     }
 }
 

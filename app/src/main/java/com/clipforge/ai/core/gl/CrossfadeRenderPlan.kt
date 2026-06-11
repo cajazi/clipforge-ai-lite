@@ -29,6 +29,7 @@ object CrossfadeRenderPlan {
     private val FADE_BLACK_TYPES = setOf("FADE", "FADE_BLACK")
     private val FADE_WHITE_TYPES = setOf("FADE_WHITE")
     private val FLASH_TYPES = setOf("FLASH", "FLASH_BLACK", "FLASH_WARM", "FLASH_BLUE")
+    private val FILM_BURN_TYPES = setOf("FILM_BURN", "FILM_BURN_WARM", "FILM_BURN_HEAVY")
     // Slide transitions: clip B slides in over static clip A (direction = B motion).
     private val SLIDE_TYPES = setOf("SLIDE_LEFT", "SLIDE_RIGHT", "SLIDE_UP", "SLIDE_DOWN")
     // Push transitions: A moves out while B slides in (direction = B motion).
@@ -76,6 +77,12 @@ object CrossfadeRenderPlan {
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val colorInt: Int,
             val type: String
+        ) : Op()
+        /** Shader-only organic film burn from A into cached B over the overlap window. */
+        data class FilmBurn(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val mode: String
         ) : Op()
         /** Slide clip B in over a static clip A; direction is the motion of B. */
         data class Slide(
@@ -201,6 +208,9 @@ object CrossfadeRenderPlan {
             val flashColorArr = IntArray(entries.size) { android.graphics.Color.WHITE }
             val flashDurArr = LongArray(entries.size)
             val flashTypeArr = arrayOfNulls<String>(entries.size)
+            val isFilmBurn = BooleanArray(entries.size)
+            val filmBurnDurArr = LongArray(entries.size)
+            val filmBurnModeArr = arrayOfNulls<String>(entries.size)
             val isSlide = BooleanArray(entries.size)
             val slideDurArr = LongArray(entries.size)
             val slideDirArr = arrayOfNulls<String>(entries.size)
@@ -247,6 +257,11 @@ object CrossfadeRenderPlan {
                     flashColorArr[i] = flashColorFor(t)
                     flashDurArr[i] = durMs
                     Log.d(TAG, "boundary $i->${i + 1} plan=FLASH requestedMs=$durMs type=$t color=${flashColorArr[i]}")
+                } else if (t in FILM_BURN_TYPES && durMs > 0L) {
+                    isFilmBurn[i] = true
+                    filmBurnModeArr[i] = t
+                    filmBurnDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=FILM_BURN requestedMs=$durMs mode=$t")
                 } else if (t in SLIDE_TYPES && durMs > 0L) {
                     isSlide[i] = true
                     slideDirArr[i] = t
@@ -301,6 +316,7 @@ object CrossfadeRenderPlan {
                 isCrossfade[i] -> crossfadeMsArr[i]
                 isDip[i] -> dipDurMsArr[i] / 2
                 isFlash[i] -> flashDurArr[i]
+                isFilmBurn[i] -> filmBurnDurArr[i]
                 isSlide[i] -> slideDurArr[i]
                 isPush[i] -> pushDurArr[i]
                 isZoom[i] -> zoomDurArr[i]
@@ -318,6 +334,7 @@ object CrossfadeRenderPlan {
                     isCrossfade[i] -> crossfadeMsArr[i] = consumptionMs
                     isDip[i] -> dipDurMsArr[i] = consumptionMs * 2
                     isFlash[i] -> flashDurArr[i] = consumptionMs
+                    isFilmBurn[i] -> filmBurnDurArr[i] = consumptionMs
                     isSlide[i] -> slideDurArr[i] = consumptionMs
                     isPush[i] -> pushDurArr[i] = consumptionMs
                     isZoom[i] -> zoomDurArr[i] = consumptionMs
@@ -366,6 +383,7 @@ object CrossfadeRenderPlan {
                     isCrossfade[i] = false
                     isDip[i] = false
                     isFlash[i] = false
+                    isFilmBurn[i] = false
                     isSlide[i] = false
                     isPush[i] = false
                     isZoom[i] = false
@@ -383,6 +401,7 @@ object CrossfadeRenderPlan {
                     TAG,
                         "boundary $i->${i + 1} finalConsumptionMs=$consumption xfade=${isCrossfade[i]} " +
                         "dip=${isDip[i]} flash=${isFlash[i]} flashType=${flashTypeArr[i]} " +
+                        "filmBurn=${isFilmBurn[i]} filmBurnMode=${filmBurnModeArr[i]} " +
                         "slide=${isSlide[i]} slideDir=${slideDirArr[i]} " +
                         "push=${isPush[i]} pushDir=${pushDirArr[i]} " +
                         "zoom=${isZoom[i]} zoomMode=${zoomModeArr[i]} " +
@@ -403,11 +422,11 @@ object CrossfadeRenderPlan {
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
                 val hasOverlapIncoming = incomingBoundary >= 0 &&
-                    (isCrossfade[incomingBoundary] || isFlash[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
+                    (isCrossfade[incomingBoundary] || isFlash[incomingBoundary] || isFilmBurn[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
                 val outgoingBoundary = i
                 val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
                 val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
-                    (isCrossfade[outgoingBoundary] || isFlash[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
+                    (isCrossfade[outgoingBoundary] || isFlash[outgoingBoundary] || isFilmBurn[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
 
                 // Crossfade/Slide/Zoom are overlap families: the transition op already
                 // renders A's tail and samples B's head, so the surrounding plain clips
@@ -463,6 +482,24 @@ object CrossfadeRenderPlan {
                                 durationMs = flashMs,
                                 colorInt = flashColorArr[i],
                                 type = flashTypeArr[i] ?: "FLASH"
+                            )
+                        )
+                    }
+                }
+                // Film Burn: organic shader burn mask over cached B (overlap-style).
+                if (i < entries.size - 1 && isFilmBurn[i]) {
+                    val burnMs = filmBurnDurArr[i]
+                    val next = entries[i + 1]
+                    if (burnMs > 0L) {
+                        ops.add(
+                            Op.FilmBurn(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - burnMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = burnMs,
+                                mode = filmBurnModeArr[i] ?: "FILM_BURN"
                             )
                         )
                     }
@@ -657,6 +694,7 @@ object CrossfadeRenderPlan {
                     is Op.Crossfade -> Log.d(TAG, "[$idx] XFADE ${op.crossfadeMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.DipToColor -> Log.d(TAG, "[$idx] DIP color=${op.colorInt} half=${op.halfDurationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[${op.bHeadStartMs}..${op.bHeadEndMs}]")
                     is Op.Flash -> Log.d(TAG, "[$idx] FLASH type=${op.type} color=${op.colorInt} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.FilmBurn -> Log.d(TAG, "[$idx] FILM_BURN mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Slide -> Log.d(TAG, "[$idx] SLIDE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Push -> Log.d(TAG, "[$idx] PUSH dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Zoom -> Log.d(TAG, "[$idx] ZOOM mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")

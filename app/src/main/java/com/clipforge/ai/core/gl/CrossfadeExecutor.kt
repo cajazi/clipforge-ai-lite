@@ -112,6 +112,13 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.FLASH_COLOR_INT to op.colorInt.toString())
         )
+        is CrossfadeRenderPlan.Op.FilmBurn -> Dispatch(
+            id = filmBurnIdFor(op.mode),
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.FILM_BURN_MODE to op.mode)
+        )
         is CrossfadeRenderPlan.Op.Slide -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "SLIDE_RIGHT" -> TransitionRegistrations.SLIDE_RIGHT
@@ -310,6 +317,18 @@ object CrossfadeExecutor {
         else -> TransitionRegistrations.FLASH_WHITE
     }
 
+    private fun filmBurnIdFor(raw: String): TransitionId = when (raw.uppercase()) {
+        "FILM_BURN_WARM" -> TransitionRegistrations.FILM_BURN_WARM
+        "FILM_BURN_HEAVY" -> TransitionRegistrations.FILM_BURN_HEAVY
+        else -> TransitionRegistrations.FILM_BURN
+    }
+
+    private fun filmBurnModeFor(raw: String): FilmBurnMode = when (raw.uppercase()) {
+        "FILM_BURN_WARM" -> FilmBurnMode.WARM
+        "FILM_BURN_HEAVY" -> FilmBurnMode.HEAVY
+        else -> FilmBurnMode.CLASSIC
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -320,6 +339,8 @@ object CrossfadeExecutor {
                 "op[$index]=DIP pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} bHeadEndMs=${op.bHeadEndMs} halfMs=${op.halfDurationMs} color=${op.colorInt}"
             is CrossfadeRenderPlan.Op.Flash ->
                 "op[$index]=FLASH pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} type=${op.type} color=${op.colorInt}"
+            is CrossfadeRenderPlan.Op.FilmBurn ->
+                "op[$index]=FILM_BURN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.Slide ->
                 "op[$index]=SLIDE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Push ->
@@ -538,6 +559,48 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "FLASH_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "FLASH type=${op.type} color=${op.colorInt} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs flash=[$flashStartUs..$flashEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.FilmBurn -> {
+                        onStage("Preparing film burn transition...")
+                        val burnStartUs = runningTimeMs * 1000L
+                        val burnEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val burnFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "FILM_BURN_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$burnFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = burnFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "FILM_BURN_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "FILM_BURN_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Film burn cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val mode = filmBurnModeFor(op.mode)
+                        Log.d(TAG, "FILM_BURN_EFFECT_CREATE_BEFORE index=$index mode=$mode window=[$burnStartUs..$burnEndUs]")
+                        val effect = FilmBurnGlEffect(burnStartUs, burnEndUs, cache, mode)
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(effect)))
+                                .build()
+                        )
+                        Log.d(TAG, "FILM_BURN_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "FILM_BURN mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs burn=[$burnStartUs..$burnEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.Slide -> {
