@@ -40,6 +40,8 @@ object CrossfadeRenderPlan {
     private val CUBE_TYPES = setOf("CUBE_LEFT", "CUBE_RIGHT")
     // Flip transitions: center-pivot card flip approximation.
     private val FLIP_TYPES = setOf("FLIP_LEFT", "FLIP_RIGHT", "FLIP_UP", "FLIP_DOWN")
+    // Page turn transitions: A curls away while B is sampled underneath.
+    private val PAGE_TURN_TYPES = setOf("PAGE_TURN_LEFT", "PAGE_TURN_RIGHT")
     // Phase 0 experimental motion transition: B whips in over a blurred A tail.
     private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT", "WHIP_PAN_RIGHT", "WHIP_PAN_UP", "WHIP_PAN_DOWN")
     // Motion blur transitions: B dissolves in while A's tail is directionally blurred.
@@ -99,6 +101,12 @@ object CrossfadeRenderPlan {
         ) : Op()
         /** Center-pivot card flip from A into B. */
         data class Flip(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val direction: String
+        ) : Op()
+        /** Curved horizontal page turn from A into B. */
+        data class PageTurn(
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val direction: String
@@ -199,6 +207,9 @@ object CrossfadeRenderPlan {
             val isFlip = BooleanArray(entries.size)
             val flipDurArr = LongArray(entries.size)
             val flipDirArr = arrayOfNulls<String>(entries.size)
+            val isPageTurn = BooleanArray(entries.size)
+            val pageTurnDurArr = LongArray(entries.size)
+            val pageTurnDirArr = arrayOfNulls<String>(entries.size)
             val isWhipPan = BooleanArray(entries.size)
             val whipPanDurArr = LongArray(entries.size)
             val whipPanDirArr = arrayOfNulls<String>(entries.size)
@@ -248,6 +259,11 @@ object CrossfadeRenderPlan {
                     flipDirArr[i] = t
                     flipDurArr[i] = durMs
                     Log.d(TAG, "boundary $i->${i + 1} plan=FLIP requestedMs=$durMs direction=$t")
+                } else if (t in PAGE_TURN_TYPES && durMs > 0L) {
+                    isPageTurn[i] = true
+                    pageTurnDirArr[i] = t
+                    pageTurnDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=PAGE_TURN requestedMs=$durMs direction=$t")
                 } else if (t in WHIP_PAN_TYPES && durMs > 0L) {
                     isWhipPan[i] = true
                     whipPanDirArr[i] = t
@@ -272,6 +288,7 @@ object CrossfadeRenderPlan {
                 isRotation[i] -> rotationDurArr[i]
                 isCube[i] -> cubeDurArr[i]
                 isFlip[i] -> flipDurArr[i]
+                isPageTurn[i] -> pageTurnDurArr[i]
                 isWhipPan[i] -> whipPanDurArr[i]
                 isMotionBlur[i] -> motionBlurDurArr[i]
                 else -> 0L
@@ -287,6 +304,7 @@ object CrossfadeRenderPlan {
                     isRotation[i] -> rotationDurArr[i] = consumptionMs
                     isCube[i] -> cubeDurArr[i] = consumptionMs
                     isFlip[i] -> flipDurArr[i] = consumptionMs
+                    isPageTurn[i] -> pageTurnDurArr[i] = consumptionMs
                     isWhipPan[i] -> whipPanDurArr[i] = consumptionMs
                     isMotionBlur[i] -> motionBlurDurArr[i] = consumptionMs
                 }
@@ -333,6 +351,7 @@ object CrossfadeRenderPlan {
                     isRotation[i] = false
                     isCube[i] = false
                     isFlip[i] = false
+                    isPageTurn[i] = false
                     isWhipPan[i] = false
                     isMotionBlur[i] = false
                     continue
@@ -348,6 +367,7 @@ object CrossfadeRenderPlan {
                         "rotation=${isRotation[i]} rotationMode=${rotationModeArr[i]} " +
                         "cube=${isCube[i]} cubeDir=${cubeDirArr[i]} " +
                         "flip=${isFlip[i]} flipDir=${flipDirArr[i]} " +
+                        "pageTurn=${isPageTurn[i]} pageTurnDir=${pageTurnDirArr[i]} " +
                         "whipPan=${isWhipPan[i]} whipPanDir=${whipPanDirArr[i]} " +
                         "motionBlur=${isMotionBlur[i]} motionBlurDir=${motionBlurDirArr[i]}"
                 )
@@ -361,11 +381,11 @@ object CrossfadeRenderPlan {
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
                 val hasOverlapIncoming = incomingBoundary >= 0 &&
-                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
+                    (isCrossfade[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
                 val outgoingBoundary = i
                 val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
                 val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
-                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
+                    (isCrossfade[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
 
                 // Crossfade/Slide/Zoom are overlap families: the transition op already
                 // renders A's tail and samples B's head, so the surrounding plain clips
@@ -533,6 +553,24 @@ object CrossfadeRenderPlan {
                         )
                     }
                 }
+                // Page Turn: curved page curl over B underneath (overlap-style).
+                if (i < entries.size - 1 && isPageTurn[i]) {
+                    val ptMs = pageTurnDurArr[i]
+                    val next = entries[i + 1]
+                    if (ptMs > 0L) {
+                        ops.add(
+                            Op.PageTurn(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - ptMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = ptMs,
+                                direction = pageTurnDirArr[i] ?: "PAGE_TURN_LEFT"
+                            )
+                        )
+                    }
+                }
                 // Experimental Whip Pan: B whips in over a blurred A tail.
                 if (i < entries.size - 1 && isWhipPan[i]) {
                     val wMs = whipPanDurArr[i]
@@ -583,6 +621,7 @@ object CrossfadeRenderPlan {
                     is Op.Rotation -> Log.d(TAG, "[$idx] ROTATION mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Cube -> Log.d(TAG, "[$idx] CUBE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Flip -> Log.d(TAG, "[$idx] FLIP dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.PageTurn -> Log.d(TAG, "[$idx] PAGE_TURN dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.WhipPan -> Log.d(TAG, "[$idx] WHIP_PAN dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.MotionBlur -> Log.d(TAG, "[$idx] MOTION_BLUR dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                 }

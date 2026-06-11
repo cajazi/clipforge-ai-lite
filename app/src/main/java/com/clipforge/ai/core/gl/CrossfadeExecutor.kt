@@ -170,6 +170,16 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
+        is CrossfadeRenderPlan.Op.PageTurn -> Dispatch(
+            id = when (op.direction.uppercase()) {
+                "PAGE_TURN_RIGHT" -> TransitionRegistrations.PAGE_TURN_RIGHT
+                else -> TransitionRegistrations.PAGE_TURN_LEFT
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
         is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
@@ -273,6 +283,11 @@ object CrossfadeExecutor {
         else -> FlipDirection.LEFT
     }
 
+    private fun pageTurnDirectionFor(raw: String): PageTurnDirection = when (raw.uppercase()) {
+        "PAGE_TURN_RIGHT" -> PageTurnDirection.RIGHT
+        else -> PageTurnDirection.LEFT
+    }
+
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
         when (op) {
             is CrossfadeRenderPlan.Op.PlainClip ->
@@ -293,6 +308,8 @@ object CrossfadeExecutor {
                 "op[$index]=CUBE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Flip ->
                 "op[$index]=FLIP pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
+            is CrossfadeRenderPlan.Op.PageTurn ->
+                "op[$index]=PAGE_TURN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.WhipPan ->
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
@@ -743,6 +760,54 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "FLIP_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "FLIP dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs flip=[$flipStartUs..$flipEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.PageTurn -> {
+                        onStage("Preparing page turn transition...")
+                        val pageTurnStartUs = runningTimeMs * 1000L
+                        val pageTurnEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val pageTurnFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "PAGE_TURN_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$pageTurnFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = pageTurnFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "PAGE_TURN_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "PAGE_TURN_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Page turn cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val direction = pageTurnDirectionFor(op.direction)
+                        Log.d(TAG, "PAGE_TURN_EFFECT_CREATE_BEFORE index=$index direction=$direction window=[$pageTurnStartUs..$pageTurnEndUs]")
+                        val pageTurnEffect = PageTurnGlEffect(
+                            startTimeUs = pageTurnStartUs,
+                            endTimeUs = pageTurnEndUs,
+                            bFrameCache = cache,
+                            direction = direction
+                        )
+                        Log.d(TAG, "PAGE_TURN_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(pageTurnEffect)))
+                                .build()
+                        )
+                        Log.d(TAG, "PAGE_TURN_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "PAGE_TURN dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs pageTurn=[$pageTurnStartUs..$pageTurnEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.WhipPan -> {

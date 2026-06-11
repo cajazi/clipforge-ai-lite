@@ -108,6 +108,8 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CAROUSEL -> "Ca"
     TransitionType.BOOK_TURN -> "BT"
     TransitionType.PAGE_TURN -> "PT"
+    TransitionType.PAGE_TURN_LEFT -> "PL"
+    TransitionType.PAGE_TURN_RIGHT -> "PR"
     TransitionType.FOLD -> "Fo"
     TransitionType.TUNNEL -> "Tu"
     TransitionType.PRISM -> "Pr"
@@ -212,6 +214,8 @@ private val THREE_D_TYPES = listOf(
     TransitionType.CAROUSEL,
     TransitionType.BOOK_TURN,
     TransitionType.PAGE_TURN,
+    TransitionType.PAGE_TURN_LEFT,
+    TransitionType.PAGE_TURN_RIGHT,
     TransitionType.FOLD,
     TransitionType.TUNNEL,
     TransitionType.PRISM

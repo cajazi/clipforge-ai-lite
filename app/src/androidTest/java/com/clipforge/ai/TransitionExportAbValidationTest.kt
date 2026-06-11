@@ -55,6 +55,8 @@ class TransitionExportAbValidationTest {
         Case("Flip Right", "FLIP_RIGHT"),
         Case("Flip Up", "FLIP_UP"),
         Case("Flip Down", "FLIP_DOWN"),
+        Case("Page Turn Left", "PAGE_TURN_LEFT"),
+        Case("Page Turn Right", "PAGE_TURN_RIGHT"),
         Case("Whip Pan Left", "WHIP_PAN_LEFT"),
         Case("Whip Pan Right", "WHIP_PAN_RIGHT"),
         Case("Whip Pan Up", "WHIP_PAN_UP"),

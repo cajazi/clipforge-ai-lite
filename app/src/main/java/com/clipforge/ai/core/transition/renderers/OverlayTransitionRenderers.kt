@@ -12,6 +12,8 @@ import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
 import com.clipforge.ai.core.gl.FlipBitmapOverlay
 import com.clipforge.ai.core.gl.FlipDirection
 import com.clipforge.ai.core.gl.FlipGlEffect
+import com.clipforge.ai.core.gl.PageTurnDirection
+import com.clipforge.ai.core.gl.PageTurnGlEffect
 import com.clipforge.ai.core.gl.PushGlEffect
 import com.clipforge.ai.core.gl.RotationBitmapOverlay
 import com.clipforge.ai.core.gl.RotationGlEffect
@@ -209,6 +211,27 @@ class FlipTransitionRenderer : TransitionRenderer {
         "FLIP_UP" -> FlipDirection.UP
         "FLIP_DOWN" -> FlipDirection.DOWN
         else -> FlipDirection.LEFT
+    }
+}
+
+/** Page Turn L/R. A curls away while animated cached B frames are sampled underneath. */
+@UnstableApi
+class PageTurnTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Page turn cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val raw = ctx.param(TransitionParamKeys.DIRECTION) ?: "PAGE_TURN_LEFT"
+        val direction = pageTurnDirectionFor(raw)
+        val effect = PageTurnGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, cache, direction)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect))
+    }
+
+    private fun pageTurnDirectionFor(raw: String): PageTurnDirection = when (raw.uppercase()) {
+        "PAGE_TURN_RIGHT" -> PageTurnDirection.RIGHT
+        else -> PageTurnDirection.LEFT
     }
 }
 

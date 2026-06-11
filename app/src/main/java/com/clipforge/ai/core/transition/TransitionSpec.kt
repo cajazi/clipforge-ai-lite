@@ -22,6 +22,7 @@ object TransitionSpec {
         Rotation,
         Cube,
         Flip,
+        PageTurn,
         WhipPan,
         MotionBlur,
         PlainCut
@@ -60,6 +61,11 @@ object TransitionSpec {
         Right,
         Up,
         Down
+    }
+
+    enum class PageTurnDirection {
+        Left,
+        Right
     }
 
     sealed class Spec(
@@ -107,6 +113,10 @@ object TransitionSpec {
         object Up : Flip(FlipDirection.Up)
         object Down : Flip(FlipDirection.Down)
     }
+    sealed class PageTurn(val direction: PageTurnDirection) : Spec(Family.PageTurn, exportable = true) {
+        object Left : PageTurn(PageTurnDirection.Left)
+        object Right : PageTurn(PageTurnDirection.Right)
+    }
     sealed class WhipPan(val direction: SlideDirection) : Spec(Family.WhipPan, exportable = true) {
         object Left : WhipPan(SlideDirection.Left)
         object Right : WhipPan(SlideDirection.Right)
@@ -148,6 +158,8 @@ object TransitionSpec {
         TransitionType.FLIP_RIGHT -> Flip.Right
         TransitionType.FLIP_UP -> Flip.Up
         TransitionType.FLIP_DOWN -> Flip.Down
+        TransitionType.PAGE_TURN_LEFT -> PageTurn.Left
+        TransitionType.PAGE_TURN_RIGHT -> PageTurn.Right
         TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
         TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
         TransitionType.WHIP_PAN_UP -> WhipPan.Up

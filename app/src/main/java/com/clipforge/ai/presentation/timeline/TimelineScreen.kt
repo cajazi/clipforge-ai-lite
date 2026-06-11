@@ -697,6 +697,24 @@ private fun previewTransitionVisualState(
                 )
             )
         }
+        is TransitionSpec.PageTurn -> {
+            val sign = when (spec.direction) {
+                TransitionSpec.PageTurnDirection.Left -> -1f
+                TransitionSpec.PageTurnDirection.Right -> 1f
+            }
+            val reveal = TransitionSpec.smoothstep((p * 1.15f).coerceIn(0f, 1f))
+            PreviewTransitionVisualState(
+                outgoing = PreviewTransitionLayerState(
+                    alpha = 1f - (0.30f * p),
+                    translationX = sign * widthPx * 0.10f * p,
+                    scale = TransitionSpec.lerp(1f, 0.93f, p),
+                    rotationY = sign * 58f * p
+                ),
+                incoming = PreviewTransitionLayerState(alpha = reveal),
+                overlayColor = Color.Black,
+                overlayAlpha = 0.18f * (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
+            )
+        }
         is TransitionSpec.WhipPan -> {
             val remaining = 1f - p
             val peak = (1f - abs((rawProgress * 2f) - 1f)).coerceIn(0f, 1f)
@@ -1054,6 +1072,8 @@ private fun TransitionPreviewOverlay(
             TransitionType.FLIP_RIGHT,
             TransitionType.FLIP_UP,
             TransitionType.FLIP_DOWN,
+            TransitionType.PAGE_TURN_LEFT,
+            TransitionType.PAGE_TURN_RIGHT,
             TransitionType.FLASH,
             TransitionType.WIPE,
             TransitionType.SLIDE_UP,
@@ -3580,6 +3600,8 @@ private fun CapCutTransitionPanel(
             TransitionType.CAROUSEL,
             TransitionType.BOOK_TURN,
             TransitionType.PAGE_TURN,
+            TransitionType.PAGE_TURN_LEFT,
+            TransitionType.PAGE_TURN_RIGHT,
             TransitionType.FOLD,
             TransitionType.TUNNEL,
             TransitionType.PRISM
@@ -3625,6 +3647,8 @@ private fun CapCutTransitionPanel(
                 TransitionType.CAROUSEL,
                 TransitionType.BOOK_TURN,
                 TransitionType.PAGE_TURN,
+                TransitionType.PAGE_TURN_LEFT,
+                TransitionType.PAGE_TURN_RIGHT,
                 TransitionType.FOLD,
                 TransitionType.TUNNEL,
                 TransitionType.PRISM
@@ -3890,6 +3914,8 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.CAROUSEL -> "Ca"
     TransitionType.BOOK_TURN -> "BT"
     TransitionType.PAGE_TURN -> "PT"
+    TransitionType.PAGE_TURN_LEFT -> "PL"
+    TransitionType.PAGE_TURN_RIGHT -> "PR"
     TransitionType.FOLD -> "Fo"
     TransitionType.TUNNEL -> "Tu"
     TransitionType.PRISM -> "Pr"
@@ -3949,6 +3975,8 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.CAROUSEL,
     TransitionType.BOOK_TURN,
     TransitionType.PAGE_TURN,
+    TransitionType.PAGE_TURN_LEFT,
+    TransitionType.PAGE_TURN_RIGHT,
     TransitionType.FOLD,
     TransitionType.TUNNEL,
     TransitionType.PRISM -> Brush.linearGradient(listOf(Color(0xFF6C5CFF), Color(0xFF20D4F5)))
