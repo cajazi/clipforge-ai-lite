@@ -132,6 +132,9 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, motionBlurId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.GlitchPro -> {
+                        runningTimeMs += op.durationMs
+                    }
                 }
                 index++
             }

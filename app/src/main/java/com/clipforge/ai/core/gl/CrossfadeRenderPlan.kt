@@ -48,6 +48,8 @@ object CrossfadeRenderPlan {
     private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT", "WHIP_PAN_RIGHT", "WHIP_PAN_UP", "WHIP_PAN_DOWN")
     // Motion blur transitions: B dissolves in while A's tail is directionally blurred.
     private val MOTION_BLUR_TYPES = setOf("MOTION_BLUR_LEFT", "MOTION_BLUR_RIGHT", "MOTION_BLUR_UP", "MOTION_BLUR_DOWN")
+    // Glitch Pro transitions: deterministic burst corruption hides a midpoint A/B swap.
+    private val GLITCH_PRO_TYPES = setOf("GLITCH_PRO", "GLITCH_DIGITAL", "GLITCH_RGB", "GLITCH_SCANLINE")
 
     data class ClipInfo(
         val path: String,
@@ -137,6 +139,12 @@ object CrossfadeRenderPlan {
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val direction: String
+        ) : Op()
+        /** Deterministic burst corruption hides a midpoint A/B swap. */
+        data class GlitchPro(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
+            val mode: String
         ) : Op()
     }
 
@@ -238,6 +246,9 @@ object CrossfadeRenderPlan {
             val isMotionBlur = BooleanArray(entries.size)
             val motionBlurDurArr = LongArray(entries.size)
             val motionBlurDirArr = arrayOfNulls<String>(entries.size)
+            val isGlitchPro = BooleanArray(entries.size)
+            val glitchProDurArr = LongArray(entries.size)
+            val glitchProModeArr = arrayOfNulls<String>(entries.size)
             for (i in 0 until entries.size - 1) {
                 val t = entries[i].transitionType?.uppercase()
                 val durMs = entries[i].transitionDurationMs ?: 0L
@@ -307,6 +318,11 @@ object CrossfadeRenderPlan {
                     motionBlurDirArr[i] = t
                     motionBlurDurArr[i] = durMs
                     Log.d(TAG, "boundary $i->${i + 1} plan=MOTION_BLUR requestedMs=$durMs direction=$t")
+                } else if (t in GLITCH_PRO_TYPES && durMs > 0L) {
+                    isGlitchPro[i] = true
+                    glitchProModeArr[i] = t
+                    glitchProDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=GLITCH_PRO requestedMs=$durMs mode=$t")
                 } else if (t != null && t != "NONE" && durMs > 0L) {
                     Log.d(TAG, "boundary $i->${i + 1} type=$t NOT implemented -> plain cut")
                 }
@@ -326,6 +342,7 @@ object CrossfadeRenderPlan {
                 isPageTurn[i] -> pageTurnDurArr[i]
                 isWhipPan[i] -> whipPanDurArr[i]
                 isMotionBlur[i] -> motionBlurDurArr[i]
+                isGlitchPro[i] -> glitchProDurArr[i]
                 else -> 0L
             }
 
@@ -344,6 +361,7 @@ object CrossfadeRenderPlan {
                     isPageTurn[i] -> pageTurnDurArr[i] = consumptionMs
                     isWhipPan[i] -> whipPanDurArr[i] = consumptionMs
                     isMotionBlur[i] -> motionBlurDurArr[i] = consumptionMs
+                    isGlitchPro[i] -> glitchProDurArr[i] = consumptionMs
                 }
             }
 
@@ -393,6 +411,7 @@ object CrossfadeRenderPlan {
                     isPageTurn[i] = false
                     isWhipPan[i] = false
                     isMotionBlur[i] = false
+                    isGlitchPro[i] = false
                     continue
                 }
                 tailConsumed[i] += consumption
@@ -410,7 +429,8 @@ object CrossfadeRenderPlan {
                         "flip=${isFlip[i]} flipDir=${flipDirArr[i]} " +
                         "pageTurn=${isPageTurn[i]} pageTurnDir=${pageTurnDirArr[i]} " +
                         "whipPan=${isWhipPan[i]} whipPanDir=${whipPanDirArr[i]} " +
-                        "motionBlur=${isMotionBlur[i]} motionBlurDir=${motionBlurDirArr[i]}"
+                        "motionBlur=${isMotionBlur[i]} motionBlurDir=${motionBlurDirArr[i]} " +
+                        "glitchPro=${isGlitchPro[i]} glitchProMode=${glitchProModeArr[i]}"
                 )
             }
 
@@ -422,11 +442,11 @@ object CrossfadeRenderPlan {
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
                 val hasOverlapIncoming = incomingBoundary >= 0 &&
-                    (isCrossfade[incomingBoundary] || isFlash[incomingBoundary] || isFilmBurn[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary])
+                    (isCrossfade[incomingBoundary] || isFlash[incomingBoundary] || isFilmBurn[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary] || isGlitchPro[incomingBoundary])
                 val outgoingBoundary = i
                 val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
                 val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
-                    (isCrossfade[outgoingBoundary] || isFlash[outgoingBoundary] || isFilmBurn[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary])
+                    (isCrossfade[outgoingBoundary] || isFlash[outgoingBoundary] || isFilmBurn[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary] || isGlitchPro[outgoingBoundary])
 
                 // Crossfade/Slide/Zoom are overlap families: the transition op already
                 // renders A's tail and samples B's head, so the surrounding plain clips
@@ -685,6 +705,24 @@ object CrossfadeRenderPlan {
                         )
                     }
                 }
+                // Glitch Pro: burst corruption hides a hard midpoint swap inside the shader.
+                if (i < entries.size - 1 && isGlitchPro[i]) {
+                    val gMs = glitchProDurArr[i]
+                    val next = entries[i + 1]
+                    if (gMs > 0L) {
+                        ops.add(
+                            Op.GlitchPro(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - gMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = gMs,
+                                mode = glitchProModeArr[i] ?: "GLITCH_PRO"
+                            )
+                        )
+                    }
+                }
             }
 
             Log.d(TAG, "=== RENDER PLAN (${ops.size} ops) ===")
@@ -704,6 +742,7 @@ object CrossfadeRenderPlan {
                     is Op.PageTurn -> Log.d(TAG, "[$idx] PAGE_TURN dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.WhipPan -> Log.d(TAG, "[$idx] WHIP_PAN dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.MotionBlur -> Log.d(TAG, "[$idx] MOTION_BLUR dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.GlitchPro -> Log.d(TAG, "[$idx] GLITCH_PRO mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                 }
             }
             ops

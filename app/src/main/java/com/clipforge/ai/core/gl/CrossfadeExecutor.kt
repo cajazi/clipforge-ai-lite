@@ -222,6 +222,7 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
+        is CrossfadeRenderPlan.Op.GlitchPro -> null
     }
 
     sealed class Result {
@@ -359,6 +360,8 @@ object CrossfadeExecutor {
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
                 "op[$index]=MOTION_BLUR pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
+            is CrossfadeRenderPlan.Op.GlitchPro ->
+                "op[$index]=GLITCH_PRO pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
         }
 
     /**
@@ -1036,6 +1039,9 @@ object CrossfadeExecutor {
                         Log.d(TAG, "MOTION_BLUR_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "MOTION_BLUR dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs blur=[$motionBlurStartUs..$motionBlurEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.GlitchPro -> {
+                        throw IllegalStateException("Glitch Pro executor wiring pending for op index=$index")
                     }
                     }
                     Log.d(TAG, "BUILD_ITEM_AFTER index=$index runningTimeMs=$runningTimeMs itemCount=${items.size} cacheCount=${caches.size}")
