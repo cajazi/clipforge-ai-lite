@@ -18,7 +18,7 @@ import androidx.media3.effect.GlEffect
  * The input texture is the outgoing A frame. [bFrameCache] supplies clip B's head frames,
  * which are uploaded as a second GL texture and sampled underneath the curl.
  */
-enum class PageTurnDirection { LEFT, RIGHT }
+enum class PageTurnDirection { LEFT, RIGHT, UP, DOWN }
 
 @UnstableApi
 class PageTurnGlEffect(
@@ -72,6 +72,7 @@ class PageTurnShaderProgram(
             uniform sampler2D uBTexSampler;
             uniform float uProgress;
             uniform float uDirectionSign;
+            uniform float uAxisVertical;
             varying vec2 vTexSamplingCoord;
 
             float smoothBand(float edge0, float edge1, float x) {
@@ -84,7 +85,9 @@ class PageTurnShaderProgram(
                 vec4 b = texture2D(uBTexSampler, uv);
 
                 float curlWidth = 0.30;
-                float x = mix(uv.x, 1.0 - uv.x, step(0.0, uDirectionSign));
+                float primaryRaw = mix(uv.x, uv.y, uAxisVertical);
+                float secondaryRaw = mix(uv.y, uv.x, uAxisVertical);
+                float x = mix(primaryRaw, 1.0 - primaryRaw, step(0.0, uDirectionSign));
                 float curlLead = 1.08 - (1.22 * uProgress);
                 float curlStart = curlLead - curlWidth;
                 float curlEnd = curlLead;
@@ -97,10 +100,13 @@ class PageTurnShaderProgram(
 
                 float local = clamp((x - curlStart) / curlWidth, 0.0, 1.0);
                 float curve = sin(local * 3.14159265);
-                float verticalBow = (uv.y - 0.5) * 0.10 * curve;
-                float backX = clamp(curlStart - (local * curlWidth * 0.72), 0.0, 1.0);
-                backX = mix(backX, 1.0 - backX, step(0.0, uDirectionSign));
-                vec2 backUv = vec2(backX, clamp(uv.y + verticalBow, 0.0, 1.0));
+                float secondaryBow = (secondaryRaw - 0.5) * 0.10 * curve;
+                float backPrimary = clamp(curlStart - (local * curlWidth * 0.72), 0.0, 1.0);
+                backPrimary = mix(backPrimary, 1.0 - backPrimary, step(0.0, uDirectionSign));
+                float backSecondary = clamp(secondaryRaw + secondaryBow, 0.0, 1.0);
+                vec2 horizontalBackUv = vec2(backPrimary, backSecondary);
+                vec2 verticalBackUv = vec2(backSecondary, backPrimary);
+                vec2 backUv = mix(horizontalBackUv, verticalBackUv, uAxisVertical);
                 vec4 backsideSrc = texture2D(uTexSampler, backUv);
                 float paperShade = 0.45 + (0.28 * curve) + (0.10 * (1.0 - local));
                 float sheen = smoothBand(0.40, 0.56, local) * (1.0 - smoothBand(0.56, 0.72, local));
@@ -149,13 +155,21 @@ class PageTurnShaderProgram(
             program.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
             program.setSamplerTexIdUniform("uBTexSampler", bTexId, /* texUnitIndex= */ 1)
             program.setFloatUniform("uProgress", t)
-            program.setFloatUniform("uDirectionSign", if (direction == PageTurnDirection.RIGHT) 1f else -1f)
+            program.setFloatUniform("uDirectionSign", directionSign(direction))
+            program.setFloatUniform("uAxisVertical", if (direction == PageTurnDirection.UP || direction == PageTurnDirection.DOWN) 1f else 0f)
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, /* first= */ 0, /* count= */ 4)
             GlUtil.checkGlError()
         } catch (e: GlUtil.GlException) {
             throw VideoFrameProcessingException(e, presentationTimeUs)
         }
+    }
+
+    private fun directionSign(direction: PageTurnDirection): Float = when (direction) {
+        PageTurnDirection.RIGHT,
+        PageTurnDirection.DOWN -> 1f
+        PageTurnDirection.LEFT,
+        PageTurnDirection.UP -> -1f
     }
 
     private fun updateBTexture(intoWindowUs: Long) {

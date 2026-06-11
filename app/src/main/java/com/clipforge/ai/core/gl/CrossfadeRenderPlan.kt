@@ -41,7 +41,7 @@ object CrossfadeRenderPlan {
     // Flip transitions: center-pivot card flip approximation.
     private val FLIP_TYPES = setOf("FLIP_LEFT", "FLIP_RIGHT", "FLIP_UP", "FLIP_DOWN")
     // Page turn transitions: A curls away while B is sampled underneath.
-    private val PAGE_TURN_TYPES = setOf("PAGE_TURN_LEFT", "PAGE_TURN_RIGHT")
+    private val PAGE_TURN_TYPES = setOf("PAGE_TURN_LEFT", "PAGE_TURN_RIGHT", "PAGE_TURN_UP", "PAGE_TURN_DOWN")
     // Phase 0 experimental motion transition: B whips in over a blurred A tail.
     private val WHIP_PAN_TYPES = setOf("WHIP_PAN_LEFT", "WHIP_PAN_RIGHT", "WHIP_PAN_UP", "WHIP_PAN_DOWN")
     // Motion blur transitions: B dissolves in while A's tail is directionally blurred.
@@ -105,7 +105,7 @@ object CrossfadeRenderPlan {
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val direction: String
         ) : Op()
-        /** Curved horizontal page turn from A into B. */
+        /** Curved page turn from A into B. */
         data class PageTurn(
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,

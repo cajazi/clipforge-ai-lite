@@ -168,6 +168,8 @@ object OverlayRendererParityHarness {
 
     private fun pageTurnId(direction: String): TransitionId = when (direction.uppercase()) {
         "PAGE_TURN_RIGHT" -> TransitionRegistrations.PAGE_TURN_RIGHT
+        "PAGE_TURN_UP" -> TransitionRegistrations.PAGE_TURN_UP
+        "PAGE_TURN_DOWN" -> TransitionRegistrations.PAGE_TURN_DOWN
         else -> TransitionRegistrations.PAGE_TURN_LEFT
     }
 

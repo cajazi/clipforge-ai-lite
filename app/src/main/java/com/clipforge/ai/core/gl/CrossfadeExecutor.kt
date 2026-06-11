@@ -175,6 +175,8 @@ object CrossfadeExecutor {
         is CrossfadeRenderPlan.Op.PageTurn -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "PAGE_TURN_RIGHT" -> TransitionRegistrations.PAGE_TURN_RIGHT
+                "PAGE_TURN_UP" -> TransitionRegistrations.PAGE_TURN_UP
+                "PAGE_TURN_DOWN" -> TransitionRegistrations.PAGE_TURN_DOWN
                 else -> TransitionRegistrations.PAGE_TURN_LEFT
             },
             pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
@@ -289,6 +291,8 @@ object CrossfadeExecutor {
 
     private fun pageTurnDirectionFor(raw: String): PageTurnDirection = when (raw.uppercase()) {
         "PAGE_TURN_RIGHT" -> PageTurnDirection.RIGHT
+        "PAGE_TURN_UP" -> PageTurnDirection.UP
+        "PAGE_TURN_DOWN" -> PageTurnDirection.DOWN
         else -> PageTurnDirection.LEFT
     }
 

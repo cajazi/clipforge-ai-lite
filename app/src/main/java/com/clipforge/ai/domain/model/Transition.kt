@@ -61,6 +61,8 @@ enum class TransitionType(val label: String, val isPremium: Boolean) {
     PAGE_TURN("3D Page Turn", false),
     PAGE_TURN_LEFT("Page Turn Left", false),
     PAGE_TURN_RIGHT("Page Turn Right", false),
+    PAGE_TURN_UP("Page Turn Up", false),
+    PAGE_TURN_DOWN("Page Turn Down", false),
     FOLD("3D Fold", false),
     TUNNEL("3D Tunnel", false),
     PRISM("3D Prism", false)

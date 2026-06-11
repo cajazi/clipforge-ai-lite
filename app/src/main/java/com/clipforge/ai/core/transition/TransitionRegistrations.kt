@@ -55,6 +55,8 @@ object TransitionRegistrations {
     val FLIP_DOWN = TransitionId("flip_down")
     val PAGE_TURN_LEFT = TransitionId("page_turn_left")
     val PAGE_TURN_RIGHT = TransitionId("page_turn_right")
+    val PAGE_TURN_UP = TransitionId("page_turn_up")
+    val PAGE_TURN_DOWN = TransitionId("page_turn_down")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
     val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
     val WHIP_PAN_UP = TransitionId("whip_pan_up")
@@ -95,6 +97,8 @@ object TransitionRegistrations {
         TransitionType.FLIP_DOWN -> FLIP_DOWN
         TransitionType.PAGE_TURN_LEFT -> PAGE_TURN_LEFT
         TransitionType.PAGE_TURN_RIGHT -> PAGE_TURN_RIGHT
+        TransitionType.PAGE_TURN_UP -> PAGE_TURN_UP
+        TransitionType.PAGE_TURN_DOWN -> PAGE_TURN_DOWN
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
         TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
         TransitionType.WHIP_PAN_UP -> WHIP_PAN_UP
@@ -185,6 +189,8 @@ object TransitionRegistrations {
         reg(FLIP_DOWN, "Flip Down", TransitionCategory.THREE_D, TimingModel.Overlap, flip, sFlip)
         reg(PAGE_TURN_LEFT, "Page Turn Left", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
         reg(PAGE_TURN_RIGHT, "Page Turn Right", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
+        reg(PAGE_TURN_UP, "Page Turn Up", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
+        reg(PAGE_TURN_DOWN, "Page Turn Down", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_UP, "Whip Pan Up", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)

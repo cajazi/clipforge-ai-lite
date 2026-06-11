@@ -67,7 +67,9 @@ object TransitionSpec {
 
     enum class PageTurnDirection {
         Left,
-        Right
+        Right,
+        Up,
+        Down
     }
 
     sealed class Spec(
@@ -120,6 +122,8 @@ object TransitionSpec {
     sealed class PageTurn(val direction: PageTurnDirection) : Spec(Family.PageTurn, exportable = true) {
         object Left : PageTurn(PageTurnDirection.Left)
         object Right : PageTurn(PageTurnDirection.Right)
+        object Up : PageTurn(PageTurnDirection.Up)
+        object Down : PageTurn(PageTurnDirection.Down)
     }
     sealed class WhipPan(val direction: SlideDirection) : Spec(Family.WhipPan, exportable = true) {
         object Left : WhipPan(SlideDirection.Left)
@@ -166,6 +170,8 @@ object TransitionSpec {
         TransitionType.FLIP_DOWN -> Flip.Down
         TransitionType.PAGE_TURN_LEFT -> PageTurn.Left
         TransitionType.PAGE_TURN_RIGHT -> PageTurn.Right
+        TransitionType.PAGE_TURN_UP -> PageTurn.Up
+        TransitionType.PAGE_TURN_DOWN -> PageTurn.Down
         TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
         TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
         TransitionType.WHIP_PAN_UP -> WhipPan.Up

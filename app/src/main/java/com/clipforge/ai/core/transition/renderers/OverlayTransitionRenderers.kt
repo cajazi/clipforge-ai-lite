@@ -216,7 +216,7 @@ class FlipTransitionRenderer : TransitionRenderer {
     }
 }
 
-/** Page Turn L/R. A curls away while animated cached B frames are sampled underneath. */
+/** Page Turn L/R/U/D. A curls away while animated cached B frames are sampled underneath. */
 @UnstableApi
 class PageTurnTransitionRenderer : TransitionRenderer {
     override val supportsExport = true
@@ -233,6 +233,8 @@ class PageTurnTransitionRenderer : TransitionRenderer {
 
     private fun pageTurnDirectionFor(raw: String): PageTurnDirection = when (raw.uppercase()) {
         "PAGE_TURN_RIGHT" -> PageTurnDirection.RIGHT
+        "PAGE_TURN_UP" -> PageTurnDirection.UP
+        "PAGE_TURN_DOWN" -> PageTurnDirection.DOWN
         else -> PageTurnDirection.LEFT
     }
 }
