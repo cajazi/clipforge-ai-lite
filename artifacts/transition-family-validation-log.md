@@ -636,3 +636,43 @@ Regression boundary:
 - Split logic unchanged.
 - Trim logic unchanged.
 - Boundary trim logic unchanged.
+
+## Transition Pack V10 Glitch Pro Family
+
+Status: Implementation ready for SM-A165F runtime validation
+
+Implemented transitions:
+- GLITCH_PRO
+- GLITCH_DIGITAL
+- GLITCH_RGB
+- GLITCH_SCANLINE
+
+Fix scope:
+- Added deterministic three-texture Glitch Pro shader family.
+- Added render-plan overlap mapping for the four V10 transition types.
+- Added legacy executor path and registry-dispatch renderer path.
+- Added transition spec/registry mappings without legacy GLITCH/RGB_SPLIT upgrade.
+- Added CapCut timeline panel and picker visibility for all four modes.
+- Added AB validation matrix cases for all four modes.
+
+Gradle verification:
+- .\gradlew.bat :app:compileDebugKotlin passed.
+- .\gradlew.bat :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin passed.
+- .\gradlew.bat assembleDebug passed.
+- .\gradlew.bat lintDebug passed.
+
+Runtime validation still required:
+- SM-A165F 45-case AB matrix.
+- Determinism double-export frame hash for GLITCH_PRO.
+- Midpoint frame-step check for all four modes.
+- Edge inspection at max displacement.
+- Preview scrub vs export side-by-side.
+- Picker and CapCut panel visual confirmation.
+- GPU memory release check across full matrix.
+
+Regression boundary:
+- Text Overlay v1.1 not implemented or modified.
+- TimelineViewModel unchanged.
+- MediaStore/Gallery unchanged.
+- Existing transition families intended unchanged outside compiler-required exhaustiveness and V10 extension points.
+- Legacy GLITCH/RGB_SPLIT/CHROMATIC_ABERRATION upgrade not implemented.
