@@ -75,7 +75,11 @@ class TransitionExportAbValidationTest {
         Case("Motion Blur Left", "MOTION_BLUR_LEFT"),
         Case("Motion Blur Right", "MOTION_BLUR_RIGHT"),
         Case("Motion Blur Up", "MOTION_BLUR_UP"),
-        Case("Motion Blur Down", "MOTION_BLUR_DOWN")
+        Case("Motion Blur Down", "MOTION_BLUR_DOWN"),
+        Case("Glitch Pro", "GLITCH_PRO"),
+        Case("Glitch Digital", "GLITCH_DIGITAL"),
+        Case("Glitch RGB", "GLITCH_RGB"),
+        Case("Glitch Scanline", "GLITCH_SCANLINE")
     )
 
     @Test
