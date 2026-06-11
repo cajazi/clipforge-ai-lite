@@ -40,6 +40,9 @@ captures/
 .DS_Store
 Thumbs.db
 
+# Claude Code local settings (machine-local permissions; never commit)
+.claude/settings.local.json
+
 # Session scaffolding / clutter
 *.bak
 *.bak*
