@@ -198,6 +198,16 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
+        is CrossfadeRenderPlan.Op.Blur -> Dispatch(
+            id = when (op.mode.uppercase()) {
+                "GAUSSIAN_BLUR" -> TransitionRegistrations.GAUSSIAN_BLUR
+                else -> TransitionRegistrations.BLUR
+            },
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.BLUR_MODE to op.mode)
+        )
         is CrossfadeRenderPlan.Op.WhipPan -> Dispatch(
             id = when (op.direction.uppercase()) {
                 "WHIP_PAN_RIGHT" -> TransitionRegistrations.WHIP_PAN_RIGHT
@@ -212,6 +222,7 @@ object CrossfadeExecutor {
         )
         is CrossfadeRenderPlan.Op.MotionBlur -> Dispatch(
             id = when (op.direction.uppercase()) {
+                "MOTION_BLUR" -> TransitionRegistrations.MOTION_BLUR
                 "MOTION_BLUR_RIGHT" -> TransitionRegistrations.MOTION_BLUR_RIGHT
                 "MOTION_BLUR_UP" -> TransitionRegistrations.MOTION_BLUR_UP
                 "MOTION_BLUR_DOWN" -> TransitionRegistrations.MOTION_BLUR_DOWN
@@ -278,7 +289,9 @@ object CrossfadeExecutor {
     }
 
     private fun blurVectorForDirection(raw: String, prefix: String): Pair<Float, Float> {
-        val dir = SlideOverlay.Direction.valueOf(raw.removePrefix(prefix))
+        val dirName = raw.removePrefix(prefix).ifBlank { "LEFT" }
+        val dir = runCatching { SlideOverlay.Direction.valueOf(dirName) }
+            .getOrDefault(SlideOverlay.Direction.LEFT)
         return when (dir) {
             SlideOverlay.Direction.LEFT -> 1f to 0f
             SlideOverlay.Direction.RIGHT -> -1f to 0f
@@ -397,6 +410,8 @@ object CrossfadeExecutor {
                 "op[$index]=FLIP pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.PageTurn ->
                 "op[$index]=PAGE_TURN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
+            is CrossfadeRenderPlan.Op.Blur ->
+                "op[$index]=BLUR pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.WhipPan ->
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
@@ -983,6 +998,45 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "PAGE_TURN_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "PAGE_TURN dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs pageTurn=[$pageTurnStartUs..$pageTurnEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Blur -> {
+                        onStage("Preparing blur transition...")
+                        val blurStartUs = runningTimeMs * 1000L
+                        val blurEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L
+                        )
+                        Log.d(TAG, "BLUR_CACHE_BUILD_BEFORE index=$index mode=${op.mode} pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "BLUR_CACHE_BUILD_AFTER index=$index mode=${op.mode} empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Blur cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val gaussian = op.mode.equals("GAUSSIAN_BLUR", ignoreCase = true)
+                        val blurEffect = CrossBlurGlEffect(
+                            startTimeUs = blurStartUs,
+                            endTimeUs = blurEndUs,
+                            maxBlurTexels = if (gaussian) 24f else 18f
+                        )
+                        val overlay = BlurredCrossfadeBitmapOverlay(
+                            cache = cache,
+                            fadeStartUs = blurStartUs,
+                            fadeEndUs = blurEndUs,
+                            maxDownsample = if (gaussian) 0.14f else 0.20f
+                        )
+                        Log.d(TAG, "BLUR_EFFECT_CREATE_BEFORE index=$index mode=${op.mode} window=[$blurStartUs..$blurEndUs] crossBlur=true bSharpenApprox=downsample")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(blurEffect, OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "BLUR_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "BLUR mode=${op.mode} ${op.durationMs}ms overlapConsumedMs=${op.durationMs} A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs blur=[$blurStartUs..$blurEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.WhipPan -> {

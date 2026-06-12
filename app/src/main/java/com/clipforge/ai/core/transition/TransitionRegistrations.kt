@@ -2,6 +2,7 @@ package com.clipforge.ai.core.transition
 
 import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.transition.renderers.CrossfadeTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.BlurTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.CubeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.DipToColorTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.FilmBurnTransitionRenderer
@@ -68,11 +69,14 @@ object TransitionRegistrations {
     val PAGE_TURN_RIGHT = TransitionId("page_turn_right")
     val PAGE_TURN_UP = TransitionId("page_turn_up")
     val PAGE_TURN_DOWN = TransitionId("page_turn_down")
+    val BLUR = TransitionId("blur")
+    val GAUSSIAN_BLUR = TransitionId("gaussian_blur")
     val WHIP_PAN_LEFT = TransitionId("whip_pan_left")
     val WHIP_PAN_RIGHT = TransitionId("whip_pan_right")
     val WHIP_PAN_UP = TransitionId("whip_pan_up")
     val WHIP_PAN_DOWN = TransitionId("whip_pan_down")
     val MOTION_BLUR_LEFT = TransitionId("motion_blur_left")
+    val MOTION_BLUR = TransitionId("motion_blur")
     val MOTION_BLUR_RIGHT = TransitionId("motion_blur_right")
     val MOTION_BLUR_UP = TransitionId("motion_blur_up")
     val MOTION_BLUR_DOWN = TransitionId("motion_blur_down")
@@ -125,10 +129,13 @@ object TransitionRegistrations {
         TransitionType.PAGE_TURN_RIGHT -> PAGE_TURN_RIGHT
         TransitionType.PAGE_TURN_UP -> PAGE_TURN_UP
         TransitionType.PAGE_TURN_DOWN -> PAGE_TURN_DOWN
+        TransitionType.BLUR -> BLUR
+        TransitionType.GAUSSIAN_BLUR -> GAUSSIAN_BLUR
         TransitionType.WHIP_PAN_LEFT -> WHIP_PAN_LEFT
         TransitionType.WHIP_PAN_RIGHT -> WHIP_PAN_RIGHT
         TransitionType.WHIP_PAN_UP -> WHIP_PAN_UP
         TransitionType.WHIP_PAN_DOWN -> WHIP_PAN_DOWN
+        TransitionType.MOTION_BLUR -> MOTION_BLUR
         TransitionType.MOTION_BLUR_LEFT -> MOTION_BLUR_LEFT
         TransitionType.MOTION_BLUR_RIGHT -> MOTION_BLUR_RIGHT
         TransitionType.MOTION_BLUR_UP -> MOTION_BLUR_UP
@@ -157,6 +164,7 @@ object TransitionRegistrations {
         val cube = CubeTransitionRenderer()
         val flip = FlipTransitionRenderer()
         val pageTurn = PageTurnTransitionRenderer()
+        val blur = BlurTransitionRenderer()
         val whip = WhipPanTransitionRenderer()
         val motionBlur = MotionBlurTransitionRenderer()
         val wipe = WipeTransitionRenderer()
@@ -200,6 +208,7 @@ object TransitionRegistrations {
         val sCube = "Preparing cube transition..."
         val sFlip = "Preparing flip transition..."
         val sPageTurn = "Preparing page turn transition..."
+        val sBlur = "Preparing blur transition..."
         val sWhip = "Preparing whip pan transition..."
         val sMotionBlur = "Preparing motion blur transition..."
         val sWipe = "Preparing wipe transition..."
@@ -240,10 +249,13 @@ object TransitionRegistrations {
         reg(PAGE_TURN_RIGHT, "Page Turn Right", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
         reg(PAGE_TURN_UP, "Page Turn Up", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
         reg(PAGE_TURN_DOWN, "Page Turn Down", TransitionCategory.THREE_D, TimingModel.Overlap, pageTurn, sPageTurn)
+        reg(BLUR, "Blur", TransitionCategory.BLUR, TimingModel.Overlap, blur, sBlur)
+        reg(GAUSSIAN_BLUR, "Gaussian Blur", TransitionCategory.BLUR, TimingModel.Overlap, blur, sBlur)
         reg(WHIP_PAN_LEFT, "Whip Pan Left", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_RIGHT, "Whip Pan Right", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_UP, "Whip Pan Up", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
         reg(WHIP_PAN_DOWN, "Whip Pan Down", TransitionCategory.BLUR, TimingModel.Overlap, whip, sWhip, Easing.ExpoOut)
+        reg(MOTION_BLUR, "Motion Blur", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)
         reg(MOTION_BLUR_LEFT, "Motion Blur Left", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)
         reg(MOTION_BLUR_RIGHT, "Motion Blur Right", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)
         reg(MOTION_BLUR_UP, "Motion Blur Up", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)

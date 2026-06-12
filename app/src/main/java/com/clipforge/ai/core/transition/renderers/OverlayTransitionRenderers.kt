@@ -6,6 +6,8 @@ import androidx.media3.transformer.EditedMediaItem
 import com.clipforge.ai.core.gl.CubeBitmapOverlay
 import com.clipforge.ai.core.gl.CubeDirection
 import com.clipforge.ai.core.gl.CubeGlEffect
+import com.clipforge.ai.core.gl.BlurredCrossfadeBitmapOverlay
+import com.clipforge.ai.core.gl.CrossBlurGlEffect
 import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
 import com.clipforge.ai.core.gl.DirectionalBlurGlEffect
@@ -33,7 +35,9 @@ import com.clipforge.ai.core.transition.TransitionRenderer
 
 @UnstableApi
 private fun blurVectorForDirection(raw: String, prefix: String): Pair<Float, Float> {
-    val dir = SlideOverlay.Direction.valueOf(raw.removePrefix(prefix))
+    val dirName = raw.removePrefix(prefix).ifBlank { "LEFT" }
+    val dir = runCatching { SlideOverlay.Direction.valueOf(dirName) }
+        .getOrDefault(SlideOverlay.Direction.LEFT)
     return when (dir) {
         SlideOverlay.Direction.LEFT -> 1f to 0f
         SlideOverlay.Direction.RIGHT -> -1f to 0f
@@ -283,6 +287,28 @@ class PageTurnTransitionRenderer : TransitionRenderer {
         "PAGE_TURN_UP" -> PageTurnDirection.UP
         "PAGE_TURN_DOWN" -> PageTurnDirection.DOWN
         else -> PageTurnDirection.LEFT
+    }
+}
+
+/** Blur/Gaussian Blur. A peaks blur near midpoint while cached B crossfades from blur to sharp. */
+@UnstableApi
+class BlurTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.crossfadeCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Blur cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val mode = ctx.param(TransitionParamKeys.BLUR_MODE) ?: "BLUR"
+        val maxBlur = if (mode.equals("GAUSSIAN_BLUR", ignoreCase = true)) 24f else 18f
+        val effect = CrossBlurGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, maxBlurTexels = maxBlur)
+        val overlay = BlurredCrossfadeBitmapOverlay(
+            cache = cache,
+            fadeStartUs = ctx.compositionStartUs,
+            fadeEndUs = ctx.compositionEndUs,
+            maxDownsample = if (mode.equals("GAUSSIAN_BLUR", ignoreCase = true)) 0.14f else 0.20f
+        )
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect, OverlayEffect(listOf(overlay))))
     }
 }
 

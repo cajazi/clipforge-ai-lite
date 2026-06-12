@@ -25,6 +25,7 @@ object TransitionSpec {
         Cube,
         Flip,
         PageTurn,
+        Blur,
         WhipPan,
         MotionBlur,
         Wipe,
@@ -167,6 +168,14 @@ object TransitionSpec {
         object Up : PageTurn(PageTurnDirection.Up)
         object Down : PageTurn(PageTurnDirection.Down)
     }
+    sealed class Blur(val mode: BlurMode) : Spec(Family.Blur, exportable = true) {
+        object Standard : Blur(BlurMode.Standard)
+        object Gaussian : Blur(BlurMode.Gaussian)
+    }
+    enum class BlurMode {
+        Standard,
+        Gaussian
+    }
     sealed class WhipPan(val direction: SlideDirection) : Spec(Family.WhipPan, exportable = true) {
         object Left : WhipPan(SlideDirection.Left)
         object Right : WhipPan(SlideDirection.Right)
@@ -233,6 +242,9 @@ object TransitionSpec {
         TransitionType.PAGE_TURN_RIGHT -> PageTurn.Right
         TransitionType.PAGE_TURN_UP -> PageTurn.Up
         TransitionType.PAGE_TURN_DOWN -> PageTurn.Down
+        TransitionType.BLUR -> Blur.Standard
+        TransitionType.GAUSSIAN_BLUR -> Blur.Gaussian
+        TransitionType.MOTION_BLUR -> MotionBlur.Left
         TransitionType.WHIP_PAN_LEFT -> WhipPan.Left
         TransitionType.WHIP_PAN_RIGHT -> WhipPan.Right
         TransitionType.WHIP_PAN_UP -> WhipPan.Up

@@ -97,4 +97,5 @@ internal object TransitionParamKeys {
     const val B_HEAD_END_MS = "bHeadEndMs"
     const val FLASH_COLOR_INT = "flashColorInt"
     const val FILM_BURN_MODE = "filmBurnMode"
+    const val BLUR_MODE = "blurMode"
 }

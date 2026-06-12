@@ -554,6 +554,12 @@ private fun previewTransitionVisualState(
                 overlayAlpha = overlayAlpha
             )
         }
+        is TransitionSpec.Blur -> PreviewTransitionVisualState(
+            outgoing = PreviewTransitionLayerState(alpha = 1f - (p * 0.28f)),
+            incoming = PreviewTransitionLayerState(alpha = p),
+            overlayColor = Color(0xFFB8C7FF),
+            overlayAlpha = (0.20f * (1f - abs((rawProgress * 2f) - 1f))).coerceIn(0f, 0.20f)
+        )
         is TransitionSpec.Slide -> {
             val remaining = 1f - p
             val incoming = when (spec.direction) {
@@ -1171,7 +1177,9 @@ private fun TransitionPreviewOverlay(
             TransitionType.FADE_BLACK,
             TransitionType.FADE_WHITE -> 1f - (progress * 0.65f)
             TransitionType.ZOOM_OUT -> 1f - progress
-            TransitionType.BLUR -> 1f - (progress * 0.35f)
+            TransitionType.BLUR,
+            TransitionType.GAUSSIAN_BLUR,
+            TransitionType.MOTION_BLUR -> 1f - (progress * 0.35f)
             TransitionType.FLASH,
             TransitionType.FLASH_BLACK,
             TransitionType.FLASH_WARM,
@@ -1195,6 +1203,8 @@ private fun TransitionPreviewOverlay(
             TransitionType.ZOOM_IN -> progress
             TransitionType.ZOOM_OUT,
             TransitionType.BLUR,
+            TransitionType.GAUSSIAN_BLUR,
+            TransitionType.MOTION_BLUR,
             TransitionType.SPIN,
             TransitionType.FLIP_LEFT,
             TransitionType.FLIP_RIGHT,
@@ -1297,7 +1307,11 @@ private fun TransitionPreviewOverlay(
                     .background(filmBurnPreviewColor(burnSpec?.mode ?: TransitionSpec.FilmBurnMode.Classic).copy(alpha = peak * 0.38f))
             )
         }
-        if (transition.transitionType == TransitionType.BLUR) {
+        if (
+            transition.transitionType == TransitionType.BLUR ||
+            transition.transitionType == TransitionType.GAUSSIAN_BLUR ||
+            transition.transitionType == TransitionType.MOTION_BLUR
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

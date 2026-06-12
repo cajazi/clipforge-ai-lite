@@ -122,6 +122,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, pageTurnId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.Blur ->
+                        results += runOp(context, index, "BLUR", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, blurId(op.mode),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.BLUR_MODE to op.mode),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.WhipPan ->
                         results += runOp(context, index, "WHIP_PAN", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, whipPanId(op.direction),
@@ -196,10 +201,16 @@ object OverlayRendererParityHarness {
     }
 
     private fun motionBlurId(direction: String): TransitionId = when (direction.uppercase()) {
+        "MOTION_BLUR" -> TransitionRegistrations.MOTION_BLUR
         "MOTION_BLUR_RIGHT" -> TransitionRegistrations.MOTION_BLUR_RIGHT
         "MOTION_BLUR_UP" -> TransitionRegistrations.MOTION_BLUR_UP
         "MOTION_BLUR_DOWN" -> TransitionRegistrations.MOTION_BLUR_DOWN
         else -> TransitionRegistrations.MOTION_BLUR_LEFT
+    }
+
+    private fun blurId(mode: String): TransitionId = when (mode.uppercase()) {
+        "GAUSSIAN_BLUR" -> TransitionRegistrations.GAUSSIAN_BLUR
+        else -> TransitionRegistrations.BLUR
     }
 
     private fun wipeId(direction: String): TransitionId = when (direction.uppercase()) {
