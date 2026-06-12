@@ -1,7 +1,7 @@
 package com.clipforge.ai.core.utils
 object Constants {
     const val DB_NAME                 = "clipforge_db"
-    const val DB_VERSION              = 3
+    const val DB_VERSION              = 4
     const val PREFS_NAME              = "clipforge_prefs"
     const val KEY_USER_ID             = "user_id"
     const val KEY_IS_PRO              = "is_pro"

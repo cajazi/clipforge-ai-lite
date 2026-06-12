@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.clipforge.ai.core.effects
 
 /** One registered effect: its metadata plus the factory that renders it. */

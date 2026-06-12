@@ -16,6 +16,7 @@ import com.clipforge.ai.core.supabase.SupabaseStorage
 import com.clipforge.ai.data.local.database.ClipForgeDatabase
 import com.clipforge.ai.data.remote.api.MediaApi
 import com.clipforge.ai.core.network.ApiClient
+import com.clipforge.ai.data.repository.EffectRepositoryImpl
 import com.clipforge.ai.data.repository.MediaRepositoryImpl
 import com.clipforge.ai.data.repository.SupabaseProjectRepository
 import com.clipforge.ai.data.repository.SupabaseRenderRepository
@@ -30,6 +31,7 @@ class ClipForgeApp : Application() {
     val projectRepository    by lazy { SupabaseProjectRepository(database.projectDao(), supabaseProjectApi) }
     val renderRepository     by lazy { SupabaseRenderRepository(supabaseRenderApi) }
     val mediaRepository      by lazy { MediaRepositoryImpl(database.mediaAssetDao(), mediaApi) }
+    val effectRepository     by lazy { EffectRepositoryImpl(database.effectItemDao()) }
     val userPreferencesManager by lazy { UserPreferencesManager(this) }
     val exportManager        by lazy { ExportManager(this, userPreferencesManager) }
     val networkMonitor       by lazy { NetworkMonitor(this) }
