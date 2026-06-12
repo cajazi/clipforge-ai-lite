@@ -6,6 +6,8 @@ import com.clipforge.ai.data.local.dao.EffectItemDao
 import com.clipforge.ai.data.local.entity.EffectItemEntity
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.repository.EffectRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 private const val TAG = "EffectRepository"
 
@@ -14,12 +16,11 @@ class EffectRepositoryImpl(
 ) : EffectRepository {
 
     override suspend fun getEffectsForProject(projectId: String): List<EffectItem> {
-        return effectItemDao.getForProject(projectId).mapNotNull { entity ->
-            runCatching { entity.toDomain() }
-                .onFailure { Log.w(TAG, "Skipping invalid effect row id=${entity.id} projectId=$projectId: ${it.message}") }
-                .getOrNull()
-        }
+        return effectItemDao.getForProject(projectId).toDomainList(projectId)
     }
+
+    override fun observeEffectsForProject(projectId: String): Flow<List<EffectItem>> =
+        effectItemDao.observeForProject(projectId).map { entities -> entities.toDomainList(projectId) }
 
     override suspend fun upsertEffect(effect: EffectItem) {
         require(effect.scope == EffectScope.GLOBAL) { "Only GLOBAL effect scope is writable in C2" }
@@ -34,6 +35,13 @@ class EffectRepositoryImpl(
         effectItemDao.deleteForProject(projectId)
     }
 }
+
+private fun List<EffectItemEntity>.toDomainList(projectId: String): List<EffectItem> =
+    mapNotNull { entity ->
+        runCatching { entity.toDomain() }
+            .onFailure { Log.w(TAG, "Skipping invalid effect row id=${entity.id} projectId=$projectId: ${it.message}") }
+            .getOrNull()
+    }
 
 fun EffectItem.toEntity(): EffectItemEntity {
     require(scope == EffectScope.GLOBAL) { "Only GLOBAL effect scope is writable in C2" }

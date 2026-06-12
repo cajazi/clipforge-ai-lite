@@ -5,7 +5,6 @@ package com.clipforge.ai.core.effects
 import androidx.media3.effect.GlEffect
 import com.clipforge.ai.core.overlay.TimelineToCompositionTimeMap
 import com.clipforge.ai.domain.model.EffectItem
-import com.clipforge.ai.domain.model.EffectParamValue
 
 object ExportEffectRegistry {
     val registry = EffectRegistry()
@@ -49,7 +48,15 @@ object EffectExportStage {
                 val mappedWindow = map.mapWindow(item.startMs, item.endMs)
                 val windowStartUs = mappedWindow.first * 1000L
                 val windowEndUs = mappedWindow.last * 1000L
-                val provider = providerFor(item, registration.descriptor.paramSpecs, windowStartUs, logger)
+                val provider = EffectParamResolver.resolve(
+                    itemId = item.id,
+                    storedParams = item.params,
+                    specs = registration.descriptor.paramSpecs,
+                    windowStartUs = windowStartUs,
+                    constantMode = EffectParamResolver.ConstantMode.Snapshot,
+                    logPrefix = "EFFECT_EXPORT",
+                    logger = logger
+                ).provider
                 val effect = registration.factory.create(windowStartUs, windowEndUs, provider)
                 Attachment(
                     effectId = item.effectId,
@@ -61,72 +68,5 @@ object EffectExportStage {
                 )
             }
         return Result(attachments)
-    }
-
-    private fun providerFor(
-        item: EffectItem,
-        specs: List<ParamSpec>,
-        windowStartUs: Long,
-        logger: (String) -> Unit
-    ): ParamProvider {
-        val specsByKey = specs.associateBy { it.key }
-        val stored = linkedMapOf<String, EffectParamValue>()
-
-        item.params.forEach { (key, value) ->
-            val spec = specsByKey[key]
-            if (spec == null) {
-                logger("EFFECT_EXPORT_DROP_UNKNOWN_PARAM item=${item.id} key=$key")
-            } else {
-                stored[key] = clampValue(item.id, spec, value, logger)
-            }
-        }
-
-        val hasKeyframed = stored.values.any { it is EffectParamValue.Keyframed }
-        return if (hasKeyframed) {
-            val tracks = specs.associate { spec ->
-                val value = stored[spec.key]
-                val frames = when (value) {
-                    is EffectParamValue.Keyframed -> value.frames.map { frame ->
-                        frame.copy(timeUs = frame.timeUs + windowStartUs)
-                    }
-                    is EffectParamValue.Constant -> listOf(Keyframe(windowStartUs, value.value))
-                    null -> listOf(Keyframe(windowStartUs, spec.default))
-                }
-                spec.key to frames
-            }
-            KeyframedParams(tracks)
-        } else {
-            val values = specs.associate { spec ->
-                val value = stored[spec.key] as? EffectParamValue.Constant
-                spec.key to (value?.value ?: spec.default)
-            }
-            ConstantParams(values)
-        }
-    }
-
-    private fun clampValue(
-        itemId: String,
-        spec: ParamSpec,
-        value: EffectParamValue,
-        logger: (String) -> Unit
-    ): EffectParamValue = when (value) {
-        is EffectParamValue.Constant -> {
-            val clamped = value.value.coerceIn(spec.min, spec.max)
-            if (clamped != value.value) {
-                logger("EFFECT_EXPORT_CLAMP_PARAM item=$itemId key=${spec.key} value=${value.value} clamped=$clamped")
-            }
-            EffectParamValue.Constant(clamped)
-        }
-        is EffectParamValue.Keyframed -> {
-            EffectParamValue.Keyframed(
-                value.frames.map { frame ->
-                    val clamped = frame.value.coerceIn(spec.min, spec.max)
-                    if (clamped != frame.value) {
-                        logger("EFFECT_EXPORT_CLAMP_KEYFRAME item=$itemId key=${spec.key} timeUs=${frame.timeUs} value=${frame.value} clamped=$clamped")
-                    }
-                    frame.copy(value = clamped)
-                }
-            )
-        }
     }
 }

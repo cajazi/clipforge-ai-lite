@@ -75,9 +75,11 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.R
 import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.core.designsystem.AppSpacing
+import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
 import com.clipforge.ai.domain.model.MediaType
@@ -157,6 +159,7 @@ fun TimelineScreen(
     var screenRecompositionCount by remember { mutableIntStateOf(0) }
     var previewVolumeClipId by remember { mutableStateOf<String?>(null) }
     var previewVolumeMultiplier by remember { mutableFloatStateOf(1f) }
+    val effectPreviewControllerRef = remember { mutableStateOf<EffectPreviewController?>(null) }
 
     SideEffect {
         screenRecompositionCount++
@@ -311,6 +314,7 @@ fun TimelineScreen(
         ) {
             Column(Modifier.fillMaxSize()) {
                 CapCutPreviewArea(
+                    projectId = projectId,
                     clips = uiState.clips,
                     clip = uiState.clips.firstOrNull { it.id == uiState.currentSegment?.clipId }
                         ?: uiState.selectedClipId?.let { selectedId -> uiState.clips.firstOrNull { it.id == selectedId } }
@@ -327,7 +331,8 @@ fun TimelineScreen(
                     previewVolumeClipId = previewVolumeClipId,
                     previewVolumeMultiplier = previewVolumeMultiplier,
                     lastAddedClipId = uiState.lastAddedClipId,
-                    onTogglePlay = { viewModel.togglePlayback() }
+                    onTogglePlay = { viewModel.togglePlayback() },
+                    onEffectPreviewController = { effectPreviewControllerRef.value = it }
                 )
                 Spacer(Modifier.height(2.dp))
                 CapCutTransportBar(
@@ -357,6 +362,8 @@ fun TimelineScreen(
                     onBeginDrag = viewModel::beginTimelineDrag,
                     onScrubTo = viewModel::scrubTo,
                     onEndDrag = viewModel::endTimelineDrag,
+                    onSuspendEffects = { effectPreviewControllerRef.value?.suspendEffects() },
+                    onResumeEffects = { effectPreviewControllerRef.value?.resumeEffects() },
                     onSelectClip = viewModel::selectClip,
                     onAddMusic = { onAddMusic?.invoke() ?: launchAudioPicker() },
                     onAddText = { onAddText?.invoke() ?: run { showTextSheet = true } },
@@ -877,6 +884,7 @@ private fun filmBurnPreviewColor(mode: TransitionSpec.FilmBurnMode): Color = whe
 
 @Composable
 private fun CapCutPreviewArea(
+    projectId: String,
     clips: List<ClipUiModel>,
     clip: ClipUiModel?,
     segment: TimelineSegment?,
@@ -891,7 +899,8 @@ private fun CapCutPreviewArea(
     previewVolumeClipId: String?,
     previewVolumeMultiplier: Float,
     lastAddedClipId: String?,
-    onTogglePlay: () -> Unit
+    onTogglePlay: () -> Unit,
+    onEffectPreviewController: (EffectPreviewController?) -> Unit
 ) {
     val previewClip = clip ?: clips.firstOrNull {
         it.thumbnailUri != null &&
@@ -1044,6 +1053,7 @@ private fun CapCutPreviewArea(
                     previewClip?.thumbnailUri != null &&
                         (previewClip.mediaType == MediaType.VIDEO || previewClip.mediaType == MediaType.OVERLAY_VIDEO) -> {
                         VideoPreviewPlayer(
+                            projectId = projectId,
                             clips = clips,
                             clip = previewClip,
                             segment = if (segment?.clipId == previewClip.id) segment else null,
@@ -1061,6 +1071,7 @@ private fun CapCutPreviewArea(
                             },
                             lastAddedClipId = lastAddedClipId,
                             transitionAlpha = 1f,
+                            onEffectPreviewController = onEffectPreviewController,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -1438,6 +1449,7 @@ private fun IncomingTransitionLayer(
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun VideoPreviewPlayer(
+    projectId: String,
     clips: List<ClipUiModel>,
     clip: ClipUiModel,
     segment: TimelineSegment?,
@@ -1451,9 +1463,11 @@ private fun VideoPreviewPlayer(
     volume: Float = 1f,
     lastAddedClipId: String? = null,
     transitionAlpha: Float = 1f,
+    onEffectPreviewController: (EffectPreviewController?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val player = remember(context) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -1473,6 +1487,22 @@ private fun VideoPreviewPlayer(
             this.volume = volume
             Log.d(SCREEN_TAG, "playerCreated")
         }
+    }
+    val effectPreviewController = remember(player, context, scope) {
+        val app = context.applicationContext as? ClipForgeApp
+        app?.let {
+            EffectPreviewController(
+                player = player,
+                repository = it.effectRepository,
+                scope = scope
+            )
+        }
+    }
+    LaunchedEffect(effectPreviewController) {
+        onEffectPreviewController(effectPreviewController)
+    }
+    LaunchedEffect(effectPreviewController, projectId) {
+        effectPreviewController?.bind(projectId)
     }
     val playableClips = remember(clips) {
         clips.filter {
@@ -1565,6 +1595,8 @@ private fun VideoPreviewPlayer(
 
     DisposableEffect(player) {
         onDispose {
+            effectPreviewController?.release()
+            onEffectPreviewController(null)
             Log.d(
                 SCREEN_TAG,
                 "playerRelease activePlayback=${player.isPlaying || latestIsPlaying} " +
@@ -2203,6 +2235,8 @@ private fun CapCutTimelineEditor(
     onBeginDrag: () -> Unit,
     onScrubTo: (Long) -> Unit,
     onEndDrag: (Long) -> Unit,
+    onSuspendEffects: () -> Unit,
+    onResumeEffects: () -> Unit,
     onSelectClip: (String) -> Unit,
     onAddMusic: () -> Unit,
     onAddText: () -> Unit,
@@ -2417,18 +2451,20 @@ private fun CapCutTimelineEditor(
                                             } while (event.changes.any { it.pressed })
                                             return@awaitEachGesture
                                         }
-                                        if (!programmaticScroll) {
-                                            userDragging = true
-                                            onBeginDrag()
-                                        }
+                                         if (!programmaticScroll) {
+                                             userDragging = true
+                                             onSuspendEffects()
+                                             onBeginDrag()
+                                         }
                                         do {
                                             val event = awaitPointerEvent()
                                         } while (event.changes.any { it.pressed })
-                                        if (userDragging) {
-                                            userDragging = false
-                                            if (suppressTimelineDragEnd || scrollState.value == scrollAtDown) {
-                                                suppressTimelineDragEnd = false
-                                            } else {
+                                         if (userDragging) {
+                                             userDragging = false
+                                             onResumeEffects()
+                                             if (suppressTimelineDragEnd || scrollState.value == scrollAtDown) {
+                                                 suppressTimelineDragEnd = false
+                                             } else {
                                                 onEndDrag(timeFromScroll)
                                                 Log.d(
                                                     SCREEN_TAG,

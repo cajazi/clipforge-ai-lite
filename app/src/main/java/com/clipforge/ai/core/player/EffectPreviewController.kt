@@ -1,0 +1,162 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
+package com.clipforge.ai.core.player
+
+import android.util.Log
+import androidx.media3.effect.GlEffect
+import androidx.media3.exoplayer.ExoPlayer
+import com.clipforge.ai.core.effects.EffectRegistry
+import com.clipforge.ai.core.effects.ExportEffectRegistry
+import com.clipforge.ai.core.effects.LiveParams
+import com.clipforge.ai.domain.model.EffectItem
+import com.clipforge.ai.domain.repository.EffectRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+
+const val PREVIEW_EFFECTS_ENABLED = true
+
+class EffectPreviewController(
+    player: ExoPlayer,
+    private val repository: EffectRepository,
+    private val scope: CoroutineScope,
+    private val registry: EffectRegistry = ExportEffectRegistry.registry,
+    private val logger: (String) -> Unit = { Log.d(TAG, it) },
+    private val videoEffectsApplier: (List<GlEffect>) -> Unit = { effects -> player.setVideoEffects(effects) }
+) {
+    private var boundProjectId: String? = null
+    private var observeJob: Job? = null
+    private var pendingApplyJob: Job? = null
+    private var latestEffects: List<EffectItem> = emptyList()
+    private var currentStructuralKeys: List<EffectPreviewPlan.StructuralKey> = emptyList()
+    private var liveParamsByItemId: Map<String, LiveParams> = emptyMap()
+    private val pendingLiveValues = linkedMapOf<String, MutableMap<String, Float>>()
+    private var suspendDepth = 0
+    private var disabledReason: String? = null
+    private var released = false
+
+    fun bind(projectId: String) {
+        if (released || boundProjectId == projectId) return
+        boundProjectId = projectId
+        observeJob?.cancel()
+        pendingApplyJob?.cancel()
+        latestEffects = emptyList()
+        currentStructuralKeys = emptyList()
+        liveParamsByItemId = emptyMap()
+        pendingLiveValues.clear()
+        logger("EFFECT_PREVIEW CREATE projectId=$projectId")
+
+        if (!PREVIEW_EFFECTS_ENABLED) {
+            disabledReason = "kill_switch"
+            logger("EFFECT_PREVIEW_DISABLED reason=kill_switch")
+            return
+        }
+
+        observeJob = scope.launch {
+            repository.observeEffectsForProject(projectId).collectLatest { effects ->
+                latestEffects = effects
+                scheduleStructuralApply()
+            }
+        }
+    }
+
+    fun setParam(effectItemId: String, key: String, value: Float) {
+        if (released || disabledReason != null) return
+        pendingLiveValues.getOrPut(effectItemId) { linkedMapOf() }[key] = value
+        val liveParams = liveParamsByItemId[effectItemId]
+        if (liveParams != null) {
+            runCatching { liveParams.set(key, value) }
+                .onFailure { disable("setParam:${it.message}", it) }
+            return
+        }
+        applyNow(force = true)
+    }
+
+    fun suspendEffects() {
+        if (released) return
+        suspendDepth++
+        logger("EFFECT_PREVIEW SUSPEND depth=$suspendDepth")
+        if (suspendDepth == 1) {
+            pendingApplyJob?.cancel()
+            setVideoEffects(emptyList(), "suspend")
+        }
+    }
+
+    fun resumeEffects() {
+        if (released || suspendDepth == 0) return
+        suspendDepth--
+        logger("EFFECT_PREVIEW RESUME depth=$suspendDepth")
+        if (suspendDepth == 0) {
+            applyNow(force = true)
+        }
+    }
+
+    fun release() {
+        if (released) return
+        released = true
+        logger("EFFECT_PREVIEW RELEASE projectId=$boundProjectId")
+        observeJob?.cancel()
+        pendingApplyJob?.cancel()
+        observeJob = null
+        pendingApplyJob = null
+        liveParamsByItemId = emptyMap()
+        currentStructuralKeys = emptyList()
+    }
+
+    private fun scheduleStructuralApply() {
+        if (released || disabledReason != null || suspendDepth > 0) return
+        val candidate = buildPlan()
+        if (candidate.structuralKeys == currentStructuralKeys) {
+            return
+        }
+        pendingApplyJob?.cancel()
+        pendingApplyJob = scope.launch {
+            delay(STRUCTURAL_DEBOUNCE_MS)
+            applyNow(force = false)
+        }
+    }
+
+    private fun applyNow(force: Boolean) {
+        if (released || disabledReason != null || suspendDepth > 0) return
+        pendingApplyJob?.cancel()
+        val plan = buildPlan()
+        if (!force && plan.structuralKeys == currentStructuralKeys) return
+        if (plan.attachments.isEmpty() && currentStructuralKeys.isEmpty()) {
+            liveParamsByItemId = emptyMap()
+            return
+        }
+        setVideoEffects(plan.effects, "apply")
+        currentStructuralKeys = plan.structuralKeys
+        liveParamsByItemId = plan.liveParamsByItemId
+        logger("EFFECT_PREVIEW APPLY count=${plan.effects.size} structuralCount=${plan.structuralKeys.size}")
+    }
+
+    private fun buildPlan(): EffectPreviewPlan.Result =
+        EffectPreviewPlan.build(
+            effects = latestEffects,
+            registry = registry,
+            pendingLiveValues = pendingLiveValues,
+            logger = logger
+        )
+
+    private fun setVideoEffects(effects: List<GlEffect>, reason: String) {
+        if (disabledReason != null) return
+        runCatching { videoEffectsApplier(effects) }
+            .onFailure { disable("$reason:${it.message}", it) }
+    }
+
+    private fun disable(reason: String, error: Throwable) {
+        if (disabledReason != null) return
+        disabledReason = reason
+        Log.w(TAG, "EFFECT_PREVIEW_DISABLED reason=$reason", error)
+        logger("EFFECT_PREVIEW_DISABLED reason=$reason")
+        runCatching { videoEffectsApplier(emptyList()) }
+    }
+
+    private companion object {
+        const val TAG = "EffectPreviewController"
+        const val STRUCTURAL_DEBOUNCE_MS = 250L
+    }
+}
