@@ -27,6 +27,7 @@ object TransitionSpec {
         PageTurn,
         WhipPan,
         MotionBlur,
+        Wipe,
         GlitchPro,
         PlainCut
     }
@@ -93,6 +94,13 @@ object TransitionSpec {
         Digital,
         Rgb,
         Scanline
+    }
+
+    enum class WipeDirection {
+        Left,
+        Right,
+        Up,
+        Down
     }
 
     sealed class Spec(
@@ -171,6 +179,12 @@ object TransitionSpec {
         object Up : MotionBlur(SlideDirection.Up)
         object Down : MotionBlur(SlideDirection.Down)
     }
+    sealed class Wipe(val direction: WipeDirection) : Spec(Family.Wipe, exportable = true) {
+        object Left : Wipe(WipeDirection.Left)
+        object Right : Wipe(WipeDirection.Right)
+        object Up : Wipe(WipeDirection.Up)
+        object Down : Wipe(WipeDirection.Down)
+    }
     sealed class GlitchPro(val mode: GlitchMode) : Spec(Family.GlitchPro, exportable = true) {
         object Pro : GlitchPro(GlitchMode.Pro)
         object Digital : GlitchPro(GlitchMode.Digital)
@@ -227,6 +241,10 @@ object TransitionSpec {
         TransitionType.MOTION_BLUR_RIGHT -> MotionBlur.Right
         TransitionType.MOTION_BLUR_UP -> MotionBlur.Up
         TransitionType.MOTION_BLUR_DOWN -> MotionBlur.Down
+        TransitionType.WIPE -> Wipe.Left
+        TransitionType.WIPE_RIGHT -> Wipe.Right
+        TransitionType.WIPE_UP -> Wipe.Up
+        TransitionType.WIPE_DOWN -> Wipe.Down
         TransitionType.GLITCH_PRO -> GlitchPro.Pro
         TransitionType.GLITCH_DIGITAL -> GlitchPro.Digital
         TransitionType.GLITCH_RGB -> GlitchPro.Rgb

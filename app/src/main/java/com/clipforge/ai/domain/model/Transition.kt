@@ -39,6 +39,7 @@ enum class TransitionType(val label: String, val isPremium: Boolean) {
     SWING("Swing", false),
     POP("Pop", false),
     WIPE("Wipe", false),
+    WIPE_RIGHT("Wipe Right", false),
     SLIDE_UP("Slide Up", false),
     SLIDE_DOWN("Slide Down", false),
     PUSH_UP("Push Up", false),

@@ -132,6 +132,11 @@ object OverlayRendererParityHarness {
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, motionBlurId(op.direction),
                             expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
                             cleanups = cleanups).also { runningTimeMs += op.durationMs }
+                    is CrossfadeRenderPlan.Op.Wipe ->
+                        results += runOp(context, index, "WIPE", op.pathA, op.aTailStartMs, op.aEndMs,
+                            op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, wipeId(op.direction),
+                            expectedItems = 1, params = mapOf(TransitionParamKeys.DIRECTION to op.direction),
+                            cleanups = cleanups).also { runningTimeMs += op.durationMs }
                     is CrossfadeRenderPlan.Op.GlitchPro ->
                         results += runOp(context, index, "GLITCH_PRO", op.pathA, op.aTailStartMs, op.aEndMs,
                             op.pathB, op.bHeadStartMs, op.durationMs, runningTimeMs, glitchProId(op.mode),
@@ -195,6 +200,13 @@ object OverlayRendererParityHarness {
         "MOTION_BLUR_UP" -> TransitionRegistrations.MOTION_BLUR_UP
         "MOTION_BLUR_DOWN" -> TransitionRegistrations.MOTION_BLUR_DOWN
         else -> TransitionRegistrations.MOTION_BLUR_LEFT
+    }
+
+    private fun wipeId(direction: String): TransitionId = when (direction.uppercase()) {
+        "WIPE_RIGHT" -> TransitionRegistrations.WIPE_RIGHT
+        "WIPE_UP" -> TransitionRegistrations.WIPE_UP
+        "WIPE_DOWN" -> TransitionRegistrations.WIPE_DOWN
+        else -> TransitionRegistrations.WIPE
     }
 
     private fun flashId(type: String): TransitionId = when (type.uppercase()) {

@@ -210,6 +210,7 @@ private fun TransitionCard(
         TransitionType.ZOOM_OUT to "\uD83D\uDD0E",
         TransitionType.FLASH to "\u26A1",
         TransitionType.WIPE to "\uD83E\uDDF9",
+        TransitionType.WIPE_RIGHT to "\u2192",
         TransitionType.SLIDE_UP to "\u2191",
         TransitionType.SLIDE_DOWN to "\u2193",
         TransitionType.PUSH_UP to "\u2191",

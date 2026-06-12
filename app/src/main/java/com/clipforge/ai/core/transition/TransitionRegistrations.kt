@@ -14,6 +14,7 @@ import com.clipforge.ai.core.transition.renderers.PushTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.RotationTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.SlideTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.WhipPanTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.WipeTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.ZoomTransitionRenderer
 import com.clipforge.ai.domain.model.TransitionType
 
@@ -75,6 +76,10 @@ object TransitionRegistrations {
     val MOTION_BLUR_RIGHT = TransitionId("motion_blur_right")
     val MOTION_BLUR_UP = TransitionId("motion_blur_up")
     val MOTION_BLUR_DOWN = TransitionId("motion_blur_down")
+    val WIPE = TransitionId("wipe")
+    val WIPE_RIGHT = TransitionId("wipe_right")
+    val WIPE_UP = TransitionId("wipe_up")
+    val WIPE_DOWN = TransitionId("wipe_down")
     val GLITCH_PRO = TransitionId("glitch_pro")
     val GLITCH_DIGITAL = TransitionId("glitch_digital")
     val GLITCH_RGB = TransitionId("glitch_rgb")
@@ -128,6 +133,10 @@ object TransitionRegistrations {
         TransitionType.MOTION_BLUR_RIGHT -> MOTION_BLUR_RIGHT
         TransitionType.MOTION_BLUR_UP -> MOTION_BLUR_UP
         TransitionType.MOTION_BLUR_DOWN -> MOTION_BLUR_DOWN
+        TransitionType.WIPE -> WIPE
+        TransitionType.WIPE_RIGHT -> WIPE_RIGHT
+        TransitionType.WIPE_UP -> WIPE_UP
+        TransitionType.WIPE_DOWN -> WIPE_DOWN
         TransitionType.GLITCH_PRO -> GLITCH_PRO
         TransitionType.GLITCH_DIGITAL -> GLITCH_DIGITAL
         TransitionType.GLITCH_RGB -> GLITCH_RGB
@@ -150,6 +159,7 @@ object TransitionRegistrations {
         val pageTurn = PageTurnTransitionRenderer()
         val whip = WhipPanTransitionRenderer()
         val motionBlur = MotionBlurTransitionRenderer()
+        val wipe = WipeTransitionRenderer()
         val glitchPro = GlitchProTransitionRenderer()
 
         fun reg(
@@ -192,6 +202,7 @@ object TransitionRegistrations {
         val sPageTurn = "Preparing page turn transition..."
         val sWhip = "Preparing whip pan transition..."
         val sMotionBlur = "Preparing motion blur transition..."
+        val sWipe = "Preparing wipe transition..."
         val sGlitch = "Preparing glitch transition..."
 
         reg(DISSOLVE, "Dissolve", TransitionCategory.DISSOLVE, TimingModel.Overlap, crossfade, sDissolve)
@@ -237,6 +248,10 @@ object TransitionRegistrations {
         reg(MOTION_BLUR_RIGHT, "Motion Blur Right", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)
         reg(MOTION_BLUR_UP, "Motion Blur Up", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)
         reg(MOTION_BLUR_DOWN, "Motion Blur Down", TransitionCategory.BLUR, TimingModel.Overlap, motionBlur, sMotionBlur)
+        reg(WIPE, "Wipe", TransitionCategory.WIPE, TimingModel.Overlap, wipe, sWipe)
+        reg(WIPE_RIGHT, "Wipe Right", TransitionCategory.WIPE, TimingModel.Overlap, wipe, sWipe)
+        reg(WIPE_UP, "Wipe Up", TransitionCategory.WIPE, TimingModel.Overlap, wipe, sWipe)
+        reg(WIPE_DOWN, "Wipe Down", TransitionCategory.WIPE, TimingModel.Overlap, wipe, sWipe)
         reg(GLITCH_PRO, "Glitch Pro", TransitionCategory.GLITCH, TimingModel.Overlap, glitchPro, sGlitch)
         reg(GLITCH_DIGITAL, "Glitch Digital", TransitionCategory.GLITCH, TimingModel.Overlap, glitchPro, sGlitch)
         reg(GLITCH_RGB, "Glitch RGB", TransitionCategory.GLITCH, TimingModel.Overlap, glitchPro, sGlitch)

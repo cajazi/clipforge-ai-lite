@@ -598,6 +598,10 @@ private fun previewTransitionVisualState(
                 incoming = incoming
             )
         }
+        is TransitionSpec.Wipe -> PreviewTransitionVisualState(
+            outgoing = PreviewTransitionLayerState(),
+            incoming = PreviewTransitionLayerState(alpha = p)
+        )
         is TransitionSpec.Zoom -> {
             val scaleStart = when (spec.mode) {
                 TransitionSpec.ZoomMode.In -> TransitionSpec.ZOOM_IN_SCALE_START
@@ -1208,6 +1212,7 @@ private fun TransitionPreviewOverlay(
             TransitionType.FILM_BURN_WARM,
             TransitionType.FILM_BURN_HEAVY,
             TransitionType.WIPE,
+            TransitionType.WIPE_RIGHT,
             TransitionType.SLIDE_UP,
             TransitionType.SLIDE_DOWN,
             TransitionType.PUSH_UP,
@@ -1222,12 +1227,14 @@ private fun TransitionPreviewOverlay(
             TransitionType.SLIDE_LEFT, TransitionType.PUSH_LEFT -> -progress * widthPx
             TransitionType.SLIDE_RIGHT, TransitionType.PUSH_RIGHT -> progress * widthPx
             TransitionType.WIPE -> -progress * widthPx * 0.35f
+            TransitionType.WIPE_RIGHT -> progress * widthPx * 0.35f
             else -> 0f
         }
         val incomingTranslationX = when (transition.transitionType) {
             TransitionType.SLIDE_LEFT, TransitionType.PUSH_LEFT -> widthPx - progress * widthPx
             TransitionType.SLIDE_RIGHT, TransitionType.PUSH_RIGHT -> -widthPx + progress * widthPx
             TransitionType.WIPE -> widthPx * (1f - progress) * 0.5f
+            TransitionType.WIPE_RIGHT -> -widthPx * (1f - progress) * 0.5f
             else -> 0f
         }
         val outgoingScale = when (transition.transitionType) {
@@ -3686,7 +3693,7 @@ private fun CapCutTransitionPanel(
     }
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("Trending") }
-    val categories = remember { listOf("Trending", "Basic", "Slide", "Push", "Zoom", "Blur", "Glitch", "Camera", "Effects", "3D") }
+    val categories = remember { listOf("Trending", "Basic", "Slide", "Push", "Zoom", "Blur", "Glitch", "Wipe", "Camera", "Effects", "3D") }
     val transitionTypes = remember {
         listOf(
             TransitionType.NONE,
@@ -3721,6 +3728,10 @@ private fun CapCutTransitionPanel(
             TransitionType.GLITCH_SCANLINE,
             TransitionType.RGB_SPLIT,
             TransitionType.CHROMATIC_ABERRATION,
+            TransitionType.WIPE,
+            TransitionType.WIPE_RIGHT,
+            TransitionType.WIPE_UP,
+            TransitionType.WIPE_DOWN,
             TransitionType.SPIN,
             TransitionType.ROTATE,
             TransitionType.CAMERA_ROLL,
@@ -3786,6 +3797,12 @@ private fun CapCutTransitionPanel(
                 TransitionType.GLITCH,
                 TransitionType.RGB_SPLIT,
                 TransitionType.CHROMATIC_ABERRATION
+            )
+            "Wipe" -> listOf(
+                TransitionType.WIPE,
+                TransitionType.WIPE_RIGHT,
+                TransitionType.WIPE_UP,
+                TransitionType.WIPE_DOWN
             )
             "Camera" -> listOf(
                 TransitionType.SPIN,
@@ -4059,6 +4076,7 @@ private fun capCutTransitionIcon(type: TransitionType): String = when (type) {
     TransitionType.FILM_BURN_WARM -> "FW"
     TransitionType.FILM_BURN_HEAVY -> "FH"
     TransitionType.WIPE -> "/"
+    TransitionType.WIPE_RIGHT -> "/>"
     TransitionType.SLIDE_UP -> "^"
     TransitionType.SLIDE_DOWN -> "v"
     TransitionType.PUSH_UP -> "^^"
@@ -4152,7 +4170,8 @@ private fun transitionCardBrush(type: TransitionType): Brush = when (type) {
     TransitionType.WHIP_PAN_RIGHT,
     TransitionType.WHIP_PAN_UP,
     TransitionType.WHIP_PAN_DOWN -> Brush.linearGradient(listOf(Color(0xFFFF6B9A), Color(0xFF6C5CFF)))
-    TransitionType.WIPE -> Brush.linearGradient(listOf(Color(0xFF2D2D32), Color(0xFF9BFFB7)))
+    TransitionType.WIPE,
+    TransitionType.WIPE_RIGHT -> Brush.linearGradient(listOf(Color(0xFF2D2D32), Color(0xFF9BFFB7)))
     TransitionType.SLIDE_UP,
     TransitionType.SLIDE_DOWN,
     TransitionType.PUSH_UP,

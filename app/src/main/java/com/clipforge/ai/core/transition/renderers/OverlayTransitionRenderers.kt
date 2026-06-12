@@ -25,6 +25,8 @@ import com.clipforge.ai.core.gl.RotationBitmapOverlay
 import com.clipforge.ai.core.gl.RotationGlEffect
 import com.clipforge.ai.core.gl.RotationMode
 import com.clipforge.ai.core.gl.SlideOverlay
+import com.clipforge.ai.core.gl.WipeDirection
+import com.clipforge.ai.core.gl.WipeGlEffect
 import com.clipforge.ai.core.gl.ZoomOverlay
 import com.clipforge.ai.core.transition.SegmentContext
 import com.clipforge.ai.core.transition.TransitionRenderer
@@ -316,6 +318,28 @@ class MotionBlurTransitionRenderer : TransitionRenderer {
         val blur = DirectionalBlurGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, blurX, blurY)
         val overlay = CrossfadeBitmapOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs)
         return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, blur, OverlayEffect(listOf(overlay))))
+    }
+}
+
+/** Wipe L/R/U/D. Reveals cached B under static A with a soft directional edge. */
+@UnstableApi
+class WipeTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Wipe cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val direction = wipeDirectionFor(ctx.param(TransitionParamKeys.DIRECTION) ?: "WIPE")
+        val effect = WipeGlEffect(ctx.compositionStartUs, ctx.compositionEndUs, cache, direction)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, effect))
+    }
+
+    private fun wipeDirectionFor(raw: String): WipeDirection = when (raw.uppercase()) {
+        "WIPE_RIGHT" -> WipeDirection.RIGHT
+        "WIPE_UP" -> WipeDirection.UP
+        "WIPE_DOWN" -> WipeDirection.DOWN
+        else -> WipeDirection.LEFT
     }
 }
 

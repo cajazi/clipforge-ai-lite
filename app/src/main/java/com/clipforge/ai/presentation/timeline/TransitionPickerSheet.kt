@@ -90,6 +90,7 @@ private fun transitionIcon(type: TransitionType): String = when (type) {
     TransitionType.SWING -> "Sw"
     TransitionType.POP -> "Po"
     TransitionType.WIPE -> "/"
+    TransitionType.WIPE_RIGHT -> "/>"
     TransitionType.SLIDE_UP -> "^"
     TransitionType.SLIDE_DOWN -> "v"
     TransitionType.PUSH_UP -> "^^"
@@ -160,6 +161,7 @@ private fun transitionDisplayName(type: TransitionType): String = when (type) {
     TransitionType.FILM_BURN_WARM -> "Film Burn Warm"
     TransitionType.FILM_BURN_HEAVY -> "Film Burn Heavy"
     TransitionType.WIPE -> "Wipe"
+    TransitionType.WIPE_RIGHT -> "Wipe Right"
     TransitionType.WIPE_UP -> "Wipe Up"
     TransitionType.WIPE_DOWN -> "Wipe Down"
     TransitionType.MIRROR_FLIP -> "Mirror Flip"
@@ -208,6 +210,12 @@ private val GLITCH_TYPES = listOf(
     TransitionType.GLITCH,
     TransitionType.RGB_SPLIT,
     TransitionType.CHROMATIC_ABERRATION
+)
+private val WIPE_TYPES = listOf(
+    TransitionType.WIPE,
+    TransitionType.WIPE_RIGHT,
+    TransitionType.WIPE_UP,
+    TransitionType.WIPE_DOWN
 )
 private val CAMERA_TYPES = listOf(
     TransitionType.SPIN,
@@ -260,7 +268,7 @@ private val TRANSITION_CATEGORIES = listOf(
     TransitionCategory(
         "All",
         listOf(TransitionType.NONE) + BASIC_TYPES + SLIDE_TYPES + PUSH_TYPES + ZOOM_TYPES +
-            BLUR_TYPES + GLITCH_TYPES + CAMERA_TYPES + EFFECT_TYPES + THREE_D_TYPES
+            BLUR_TYPES + GLITCH_TYPES + WIPE_TYPES + CAMERA_TYPES + EFFECT_TYPES + THREE_D_TYPES
     ),
     TransitionCategory("Basic", BASIC_TYPES),
     TransitionCategory("Slide", SLIDE_TYPES),
@@ -268,6 +276,7 @@ private val TRANSITION_CATEGORIES = listOf(
     TransitionCategory("Zoom", ZOOM_TYPES),
     TransitionCategory("Blur", BLUR_TYPES),
     TransitionCategory("Glitch", GLITCH_TYPES),
+    TransitionCategory("Wipe", WIPE_TYPES),
     TransitionCategory("Camera", CAMERA_TYPES),
     TransitionCategory("Effects", EFFECT_TYPES),
     TransitionCategory("3D", THREE_D_TYPES)

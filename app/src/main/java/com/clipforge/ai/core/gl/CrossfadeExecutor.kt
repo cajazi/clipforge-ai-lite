@@ -222,6 +222,13 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
         )
+        is CrossfadeRenderPlan.Op.Wipe -> Dispatch(
+            id = wipeIdFor(op.direction),
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = mapOf(TransitionParamKeys.DIRECTION to op.direction)
+        )
         is CrossfadeRenderPlan.Op.GlitchPro -> Dispatch(
             id = glitchIdFor(op.mode),
             pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
@@ -337,6 +344,13 @@ object CrossfadeExecutor {
         else -> TransitionRegistrations.GLITCH_PRO
     }
 
+    private fun wipeIdFor(raw: String): TransitionId = when (raw.uppercase()) {
+        "WIPE_RIGHT" -> TransitionRegistrations.WIPE_RIGHT
+        "WIPE_UP" -> TransitionRegistrations.WIPE_UP
+        "WIPE_DOWN" -> TransitionRegistrations.WIPE_DOWN
+        else -> TransitionRegistrations.WIPE
+    }
+
     private fun filmBurnModeFor(raw: String): FilmBurnMode = when (raw.uppercase()) {
         "FILM_BURN_WARM" -> FilmBurnMode.WARM
         "FILM_BURN_HEAVY" -> FilmBurnMode.HEAVY
@@ -348,6 +362,13 @@ object CrossfadeExecutor {
         "GLITCH_RGB" -> GlitchMode.RGB
         "GLITCH_SCANLINE" -> GlitchMode.SCANLINE
         else -> GlitchMode.PRO
+    }
+
+    private fun wipeDirectionFor(raw: String): WipeDirection = when (raw.uppercase()) {
+        "WIPE_RIGHT" -> WipeDirection.RIGHT
+        "WIPE_UP" -> WipeDirection.UP
+        "WIPE_DOWN" -> WipeDirection.DOWN
+        else -> WipeDirection.LEFT
     }
 
     private fun describeOp(index: Int, op: CrossfadeRenderPlan.Op): String =
@@ -380,6 +401,8 @@ object CrossfadeExecutor {
                 "op[$index]=WHIP_PAN pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.MotionBlur ->
                 "op[$index]=MOTION_BLUR pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
+            is CrossfadeRenderPlan.Op.Wipe ->
+                "op[$index]=WIPE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.GlitchPro ->
                 "op[$index]=GLITCH_PRO pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
         }
@@ -1058,6 +1081,49 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "MOTION_BLUR_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "MOTION_BLUR dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs blur=[$motionBlurStartUs..$motionBlurEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Wipe -> {
+                        onStage("Preparing wipe transition...")
+                        val wipeStartUs = runningTimeMs * 1000L
+                        val wipeEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val wipeFps = slideCacheFps(op.durationMs)
+                        Log.d(
+                            TAG,
+                            "WIPE_CACHE_PROFILE index=$index durationMs=${op.durationMs} fps=$wipeFps " +
+                                "maxDimension=$SLIDE_CACHE_MAX_DIMENSION minCoverage=$SLIDE_MIN_COVERAGE_PERCENT " +
+                                "fallbackCoverage=$SLIDE_FAST_SAFE_COVERAGE_PERCENT maxFrames=$MAX_SLIDE_CACHE_FRAMES " +
+                                "maxBytes=$SLIDE_MAX_CACHE_BYTES"
+                        )
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = wipeFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "WIPE_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "WIPE_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Wipe cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+
+                        val direction = wipeDirectionFor(op.direction)
+                        Log.d(TAG, "WIPE_EFFECT_CREATE_BEFORE index=$index direction=$direction window=[$wipeStartUs..$wipeEndUs]")
+                        val effect = WipeGlEffect(wipeStartUs, wipeEndUs, cache, direction)
+                        Log.d(TAG, "WIPE_ITEM_CREATE_BEFORE index=$index pathA=${op.pathA} clip=[${op.aTailStartMs}..${op.aEndMs}]")
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(effect)))
+                                .build()
+                        )
+                        Log.d(TAG, "WIPE_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
+                        Log.d(TAG, "WIPE dir=${op.direction} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs wipe=[$wipeStartUs..$wipeEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.GlitchPro -> {
