@@ -19,6 +19,11 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.clipforge.ai.ClipForgeApp
+import com.clipforge.ai.core.effects.EffectExportStage
+import com.clipforge.ai.core.effects.ExportEffectRegistry
+import com.clipforge.ai.core.overlay.OpTimePieceAdapter
+import com.clipforge.ai.core.overlay.TimelineToCompositionTimeMap
 import com.clipforge.ai.core.transition.SegmentContext
 import com.clipforge.ai.core.transition.TransitionId
 import com.clipforge.ai.core.transition.TransitionRegistrations
@@ -458,6 +463,16 @@ object CrossfadeExecutor {
         val ops = CrossfadeRenderPlan.build(context, projectId)
         Log.d(TAG, "PLAN_BUILT projectId=$projectId opCount=${ops.size}")
         ops.forEachIndexed { index, op -> Log.d(TAG, describeOp(index, op)) }
+        val persistedEffects = try {
+            (context.applicationContext as? ClipForgeApp)
+                ?.effectRepository
+                ?.getEffectsForProject(projectId)
+                .orEmpty()
+        } catch (t: Throwable) {
+            Log.w(TAG, "EFFECT_SNAPSHOT_FAILED projectId=$projectId reason=${t.message}", t)
+            emptyList()
+        }
+        Log.d(TAG, "EFFECT_SNAPSHOT projectId=$projectId count=${persistedEffects.size}")
         val projectRow = try { ClipForgeDatabase.getInstance(context).projectDao().getProjectById(projectId) } catch (_: Exception) { null }
         val (outW, outH) = outputDimensions(projectRow?.aspectRatio, projectRow?.exportQuality)
         Log.d(TAG, "output dims ${outW}x${outH} from aspect=${projectRow?.aspectRatio} quality=${projectRow?.exportQuality}")
@@ -465,6 +480,7 @@ object CrossfadeExecutor {
             onResult(Result.Error("empty render plan"))
             return
         }
+        val timeMap = TimelineToCompositionTimeMap.build(OpTimePieceAdapter.toTimePieces(ops))
 
         val outputFile = File(context.getExternalFilesDir(null), "xfade_timeline_${System.currentTimeMillis()}.mp4")
         if (outputFile.exists()) outputFile.delete()
@@ -1245,8 +1261,23 @@ object CrossfadeExecutor {
         val sequence = EditedMediaItemSequence.Builder(items).build()
         Log.d(TAG, "SEQUENCE_CREATE_AFTER")
         Log.d(TAG, "OUTPUT_EFFECTS_CREATE_BEFORE out=${outW}x${outH}")
-        val outputEffects = Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT)))
-        Log.d(TAG, "OUTPUT_EFFECTS_CREATE_AFTER")
+        val presentationEffect = Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT)
+        val stageEffects = if (timeMap.compositionTotalMs == runningTimeMs) {
+            EffectExportStage.build(
+                effects = persistedEffects,
+                registry = ExportEffectRegistry.registry,
+                map = timeMap,
+                logger = { message -> Log.d(TAG, message) }
+            ).effects
+        } else {
+            Log.e(
+                TAG,
+                "EFFECT_TIMEMAP_MISMATCH projectId=$projectId mapCompositionTotalMs=${timeMap.compositionTotalMs} runningTimeMs=$runningTimeMs droppingEffects=${persistedEffects.size}"
+            )
+            emptyList()
+        }
+        val outputEffects = Effects(emptyList(), listOf(presentationEffect) + stageEffects)
+        Log.d(TAG, "OUTPUT_EFFECTS_CREATE_AFTER stageCount=${stageEffects.size} mapCompositionTotalMs=${timeMap.compositionTotalMs} runningTimeMs=$runningTimeMs")
         Log.d(TAG, "COMPOSITION_CREATE_BEFORE sequenceCount=1 itemCount=${items.size}")
         val composition = Composition.Builder(listOf(sequence)).setEffects(outputEffects).build()
         Log.d(TAG, "COMPOSITION_CREATE_AFTER composition=$composition")
