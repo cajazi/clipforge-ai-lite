@@ -12,11 +12,13 @@ import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.data.local.entity.MediaAssetEntity
 import com.clipforge.ai.data.local.entity.TimelineItemEntity
 import com.clipforge.ai.data.repository.TransitionRepositoryImpl
+import com.clipforge.ai.domain.history.ClipSnapshotCommand
 import com.clipforge.ai.domain.model.MediaType
 import com.clipforge.ai.domain.model.Transition
 import com.clipforge.ai.domain.model.TransitionType
 import com.clipforge.ai.domain.model.TimelineSegment
 import com.clipforge.ai.domain.model.buildTimelineSegments
+import com.clipforge.ai.domain.selection.SelectionTarget
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.math.roundToLong
@@ -136,6 +138,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private val app  = application as ClipForgeApp
     private val dao  = app.database.timelineDao()
+    private val historyRegistry = app.historyRegistry
 
     private val transitionRepo by lazy {
         TransitionRepositoryImpl(dao, app.authManager.sessionManager)
@@ -148,15 +151,19 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private var currentProjectId: String? = null
     private var playbackJob: Job?         = null
-    private val undoStack = ArrayDeque<TimelineHistoryEntry>()
-    private val redoStack = ArrayDeque<TimelineHistoryEntry>()
+
+    init {
+        viewModelScope.launch {
+            historyRegistry.state.collect { history ->
+                _uiState.update { it.copy(canUndo = history.canUndo, canRedo = history.canRedo) }
+            }
+        }
+    }
 
     fun loadForProject(projectId: String) {
         if (currentProjectId == projectId) return
         currentProjectId = projectId
-        undoStack.clear()
-        redoStack.clear()
-        updateHistoryAvailability()
+        historyRegistry.clear()
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             dao.getTimelineForProject(projectId).collect { entities ->
@@ -693,30 +700,26 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun undo() {
-        val entry = undoStack.removeLastOrNull() ?: return
         viewModelScope.launch {
             val playheadBeforeMs = _uiState.value.globalProjectTimeMs
-            restoreTimelineSnapshot(entry.projectId, entry.before, entry.selectedBefore)
-            redoStack.addLast(entry)
-            updateHistoryAvailability()
+            val handled = historyRegistry.undo()
+            if (!handled) return@launch
             Log.d(TAG, "PLAYHEAD_POSITION action=UNDO beforeMs=$playheadBeforeMs afterMs=${_uiState.value.globalProjectTimeMs}")
-            Log.d(TAG, "PREVIEW_SYNC action=UNDO currentTimelineMs=${_uiState.value.globalProjectTimeMs} selectedClipId=${entry.selectedBefore}")
+            Log.d(TAG, "PREVIEW_SYNC action=UNDO currentTimelineMs=${_uiState.value.globalProjectTimeMs} selectedClipId=${_uiState.value.selectedClipId}")
             Log.d(TAG, "TIMELINE_SYNC action=UNDO autoScroll=false preserveTimelineScrollVersion=${_uiState.value.preserveTimelineScrollVersion}")
-            Log.d(TAG, "undo action=${entry.label}")
+            Log.d(TAG, "undo action=sharedHistory")
         }
     }
 
     fun redo() {
-        val entry = redoStack.removeLastOrNull() ?: return
         viewModelScope.launch {
             val playheadBeforeMs = _uiState.value.globalProjectTimeMs
-            restoreTimelineSnapshot(entry.projectId, entry.after, entry.selectedAfter)
-            undoStack.addLast(entry)
-            updateHistoryAvailability()
+            val handled = historyRegistry.redo()
+            if (!handled) return@launch
             Log.d(TAG, "PLAYHEAD_POSITION action=REDO beforeMs=$playheadBeforeMs afterMs=${_uiState.value.globalProjectTimeMs}")
-            Log.d(TAG, "PREVIEW_SYNC action=REDO currentTimelineMs=${_uiState.value.globalProjectTimeMs} selectedClipId=${entry.selectedAfter}")
+            Log.d(TAG, "PREVIEW_SYNC action=REDO currentTimelineMs=${_uiState.value.globalProjectTimeMs} selectedClipId=${_uiState.value.selectedClipId}")
             Log.d(TAG, "TIMELINE_SYNC action=REDO autoScroll=false preserveTimelineScrollVersion=${_uiState.value.preserveTimelineScrollVersion}")
-            Log.d(TAG, "redo action=${entry.label}")
+            Log.d(TAG, "redo action=sharedHistory")
         }
     }
 
@@ -1924,19 +1927,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         selectedAfter: String?
     ) {
         if (before == after) return
-        undoStack.addLast(
-            TimelineHistoryEntry(
-                projectId = projectId,
+        historyRegistry.record(
+            ClipSnapshotCommand(
                 label = label,
                 before = before,
                 after = after,
-                selectedBefore = selectedBefore,
-                selectedAfter = selectedAfter
-            )
+                selectedBefore = selectedBefore.toSelectionTarget(),
+                selectedAfter = selectedAfter.toSelectionTarget()
+            ) { items, selection ->
+                restoreTimelineSnapshot(projectId, items, selection.clipId)
+            }
         )
-        while (undoStack.size > MAX_HISTORY_ENTRIES) undoStack.removeFirst()
-        redoStack.clear()
-        updateHistoryAvailability()
     }
 
     private suspend fun restoreTimelineSnapshot(
@@ -1957,7 +1958,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun updateHistoryAvailability() {
-        _uiState.update { it.copy(canUndo = undoStack.isNotEmpty(), canRedo = redoStack.isNotEmpty()) }
+        val history = historyRegistry.state.value
+        _uiState.update { it.copy(canUndo = history.canUndo, canRedo = history.canRedo) }
     }
 
     private fun addPickedTrack(uri: Uri, hint: MediaType, trackIndex: Int) {
@@ -2101,13 +2103,6 @@ private const val MIN_VOLUME_MULTIPLIER = 0f
 private const val MAX_VOLUME_MULTIPLIER = 10f
 private const val DEFAULT_OVERLAY_DURATION_MS = 3000L
 private const val TEXT_OVERLAY_MIME = "application/x-clipforge-text"
-private const val MAX_HISTORY_ENTRIES = 50
 
-private data class TimelineHistoryEntry(
-    val projectId: String,
-    val label: String,
-    val before: List<TimelineItemEntity>,
-    val after: List<TimelineItemEntity>,
-    val selectedBefore: String?,
-    val selectedAfter: String?
-)
+private fun String?.toSelectionTarget(): SelectionTarget =
+    if (this == null) SelectionTarget.None else SelectionTarget.Clip(this)

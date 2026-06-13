@@ -31,6 +31,13 @@ class HistoryRegistry(
         publish()
     }
 
+    fun record(command: UndoableCommand) {
+        flushCoalesced()
+        pushUndo(command)
+        redoStack.clear()
+        publish()
+    }
+
     suspend fun undo(): Boolean {
         flushCoalesced()
         val command = undoStack.removeLastOrNull() ?: return false
@@ -70,7 +77,7 @@ class HistoryRegistry(
         }
     }
 
-    suspend fun flushCoalesced() {
+    fun flushCoalesced() {
         val pending = pendingCoalescedCommand ?: return
         pushUndo(pending)
         pendingCoalescedCommand = null

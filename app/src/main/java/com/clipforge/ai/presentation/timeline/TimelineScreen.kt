@@ -83,7 +83,6 @@ import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
 import com.clipforge.ai.domain.history.DeleteEffectCommand
-import com.clipforge.ai.domain.history.HistoryRegistry
 import com.clipforge.ai.domain.history.SelectEffectCommand
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.MediaType
@@ -171,9 +170,10 @@ fun TimelineScreen(
     val effectPreviewControllerRef = remember { mutableStateOf<EffectPreviewController?>(null) }
     val selectionController = remember { SelectionController() }
     val selectionTarget by selectionController.selection.collectAsState()
-    val effectHistoryRegistry = remember { HistoryRegistry() }
-    val effectHistoryState by effectHistoryRegistry.state.collectAsState()
-    val effectRepository = remember(context) { (context.applicationContext as ClipForgeApp).effectRepository }
+    val app = remember(context) { context.applicationContext as ClipForgeApp }
+    val historyRegistry = remember(app) { app.historyRegistry }
+    val effectHistoryState by historyRegistry.state.collectAsState()
+    val effectRepository = remember(app) { app.effectRepository }
     val timelineEffects by remember(projectId, effectRepository) {
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
@@ -324,7 +324,7 @@ fun TimelineScreen(
                             val selectedEffectId = effectActionBarState.selectedEffectId
                             val selectedEffect = timelineEffects.firstOrNull { it.id == selectedEffectId }
                             if (selectedEffect != null) {
-                                effectHistoryRegistry.execute(
+                                historyRegistry.execute(
                                     DeleteEffectCommand(
                                         repository = effectRepository,
                                         effect = selectedEffect,
@@ -335,10 +335,10 @@ fun TimelineScreen(
                         }
                     },
                     onUndo = {
-                        screenScope.launch { effectHistoryRegistry.undo() }
+                        screenScope.launch { historyRegistry.undo() }
                     },
                     onRedo = {
-                        screenScope.launch { effectHistoryRegistry.redo() }
+                        screenScope.launch { historyRegistry.redo() }
                     },
                     onClearSelection = { selectionController.clear() }
                 )
@@ -444,7 +444,7 @@ fun TimelineScreen(
                     },
                     onSelectEffect = { effectId ->
                         screenScope.launch {
-                            effectHistoryRegistry.execute(
+                            historyRegistry.execute(
                                 SelectEffectCommand(
                                     selectionController = selectionController,
                                     effectId = effectId
