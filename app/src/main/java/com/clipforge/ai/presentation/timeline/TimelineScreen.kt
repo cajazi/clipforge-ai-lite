@@ -82,9 +82,13 @@ import com.clipforge.ai.core.designsystem.AppSpacing
 import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
+import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.MediaType
 import com.clipforge.ai.domain.model.TimelineSegment
 import com.clipforge.ai.domain.model.TransitionType
+import com.clipforge.ai.domain.selection.SelectionController
+import com.clipforge.ai.domain.selection.SelectionTarget
+import com.clipforge.ai.presentation.effects.TimelineEffectLane
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -160,6 +164,13 @@ fun TimelineScreen(
     var previewVolumeClipId by remember { mutableStateOf<String?>(null) }
     var previewVolumeMultiplier by remember { mutableFloatStateOf(1f) }
     val effectPreviewControllerRef = remember { mutableStateOf<EffectPreviewController?>(null) }
+    val selectionController = remember { SelectionController() }
+    val selectionTarget by selectionController.selection.collectAsState()
+    val effectRepository = remember(context) { (context.applicationContext as ClipForgeApp).effectRepository }
+    val timelineEffects by remember(projectId, effectRepository) {
+        effectRepository.observeEffectsForProject(projectId)
+    }.collectAsState(initial = emptyList<EffectItem>())
+    val visibleSelectedClipId = selectionTarget.clipId
 
     SideEffect {
         screenRecompositionCount++
@@ -199,6 +210,23 @@ fun TimelineScreen(
     }
 
     LaunchedEffect(projectId) { viewModel.loadForProject(projectId) }
+    LaunchedEffect(uiState.selectedClipId) {
+        val selectedClipId = uiState.selectedClipId
+        if (selectedClipId != null && selectionTarget !is SelectionTarget.Effect) {
+            selectionController.selectClip(selectedClipId)
+        }
+    }
+    LaunchedEffect(timelineEffects, uiState.clips, selectionTarget) {
+        when (val target = selectionTarget) {
+            is SelectionTarget.Clip -> {
+                if (uiState.clips.none { it.id == target.id }) selectionController.clear()
+            }
+            is SelectionTarget.Effect -> {
+                if (timelineEffects.none { it.id == target.id }) selectionController.clear()
+            }
+            SelectionTarget.None -> Unit
+        }
+    }
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
@@ -345,7 +373,9 @@ fun TimelineScreen(
                     globalTime = uiState.globalProjectTimeMs,
                     totalMs = uiState.totalDurationMs,
                     isPlaying = uiState.isPlaying,
-                    selectedClipId = uiState.selectedClipId,
+                    selectedClipId = visibleSelectedClipId,
+                    effects = timelineEffects,
+                    selectionTarget = selectionTarget,
                     interactionMode = uiState.interactionMode,
                     splitAdjustClipAId = uiState.splitAdjustClipAId,
                     splitAdjustClipBId = uiState.splitAdjustClipBId,
@@ -364,13 +394,22 @@ fun TimelineScreen(
                     onEndDrag = viewModel::endTimelineDrag,
                     onSuspendEffects = { effectPreviewControllerRef.value?.suspendEffects() },
                     onResumeEffects = { effectPreviewControllerRef.value?.resumeEffects() },
-                    onSelectClip = viewModel::selectClip,
+                    onSelectClip = { clipId ->
+                        selectionController.selectClip(clipId)
+                        viewModel.selectClip(clipId)
+                    },
+                    onSelectEffect = { effectId ->
+                        selectionController.selectEffect(effectId)
+                    },
                     onAddMusic = { onAddMusic?.invoke() ?: launchAudioPicker() },
                     onAddText = { onAddText?.invoke() ?: run { showTextSheet = true } },
                     audioTrackCount = uiState.audioTrackCount,
                     textTrackCount = uiState.textTrackCount,
                     overlayTrackCount = uiState.overlayTrackCount,
-                    onLongPressClip = viewModel::selectClip,
+                    onLongPressClip = { clipId ->
+                        selectionController.selectClip(clipId)
+                        viewModel.selectClip(clipId)
+                    },
                     onMoveClip = viewModel::moveClip,
                     onReorderClip = viewModel::reorderClip,
                     onResumePlayback = viewModel::play,
@@ -2221,6 +2260,8 @@ private fun CapCutTimelineEditor(
     totalMs: Long,
     isPlaying: Boolean,
     selectedClipId: String?,
+    effects: List<EffectItem>,
+    selectionTarget: SelectionTarget,
     interactionMode: EditorInteractionMode,
     splitAdjustClipAId: String?,
     splitAdjustClipBId: String?,
@@ -2238,6 +2279,7 @@ private fun CapCutTimelineEditor(
     onSuspendEffects: () -> Unit,
     onResumeEffects: () -> Unit,
     onSelectClip: (String) -> Unit,
+    onSelectEffect: (String) -> Unit,
     onAddMusic: () -> Unit,
     onAddText: () -> Unit,
     audioTrackCount: Int,
@@ -2617,6 +2659,19 @@ private fun CapCutTimelineEditor(
                                 .zIndex(10f)
                         )
                     }
+                    Spacer(Modifier.height(4.dp))
+                    TimelineEffectLane(
+                        effects = effects,
+                        selectionTarget = selectionTarget,
+                        pxPerMs = pxPerMs,
+                        scrollState = scrollState,
+                        playheadTrackLead = playheadTrackLead,
+                        playheadTrackTrail = playheadTrackTrail + STICKY_ADD_MEDIA_PADDING,
+                        onSelectEffect = { effectId ->
+                            onSelectEffect(effectId)
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    )
                     if (audioTrackCount > 0) {
                         AddTrackLane("Audio track", onClick = onAddMusic)
                     }
