@@ -88,7 +88,10 @@ import com.clipforge.ai.domain.model.TimelineSegment
 import com.clipforge.ai.domain.model.TransitionType
 import com.clipforge.ai.domain.selection.SelectionController
 import com.clipforge.ai.domain.selection.SelectionTarget
+import com.clipforge.ai.presentation.effects.EffectActionBar
 import com.clipforge.ai.presentation.effects.TimelineEffectLane
+import com.clipforge.ai.presentation.effects.buildEffectActionBarState
+import com.clipforge.ai.presentation.effects.deleteSelectedEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -171,6 +174,10 @@ fun TimelineScreen(
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
     val visibleSelectedClipId = selectionTarget.clipId
+    val effectActionBarState = remember(timelineEffects, selectionTarget) {
+        buildEffectActionBarState(timelineEffects, selectionTarget)
+    }
+    val screenScope = rememberCoroutineScope()
 
     SideEffect {
         screenRecompositionCount++
@@ -300,37 +307,51 @@ fun TimelineScreen(
                         "blockingModal=${showSpeedSheet || showVolumeSheet || showTransformSheet || showTextSheet || comingSoonTool != null || placeholderTool != null}"
                 )
             }
-            TimelineToolbar(
-                toolbarMode = uiState.toolbarMode,
-                canUndo = uiState.canUndo,
-                canRedo = uiState.canRedo,
-                splitButtonEnabled = splitButtonEnabled,
-                onPrimaryTool = { label ->
-                    when (label) {
-                        "Edit" -> viewModel.onPrimaryToolClicked(label)
-                        "Audio" -> onAddMusic?.invoke() ?: launchAudioPicker()
-                        "Text" -> onAddText?.invoke() ?: run { showTextSheet = true }
-                        "Overlay" -> onAddOverlay?.invoke() ?: launchVisualPicker()
-                        else -> comingSoonTool = label
-                    }
-                },
-                onEditTool = { action ->
-                    Log.d(SCREEN_TAG, "BOTTOM_TOOLBAR_CLICK_RECEIVED action=${action.label}")
-                    if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
-                        Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
-                    } else {
-                        if (action == EditToolAction.Split) {
-                            Log.d(
-                                SCREEN_TAG,
-                                "SPLIT_BUTTON_TAP candidateClipId=${splitCandidateClip?.id} selectedClipId=${uiState.selectedClipId} currentSegment=${uiState.currentSegment?.clipId} " +
-                                    "playheadMs=${uiState.globalProjectTimeMs}"
-                            )
-                            Log.d(SCREEN_TAG, "SPLIT_ACTION_DISPATCHED source=bottomToolbar handler=existingViewModel")
+            if (effectActionBarState.visible) {
+                EffectActionBar(
+                    state = effectActionBarState,
+                    onDelete = {
+                        screenScope.launch {
+                            deleteSelectedEffect(selectionController) { effectId ->
+                                effectRepository.deleteEffect(effectId)
+                            }
                         }
-                        viewModel.onEditToolClicked(action)
+                    },
+                    onClearSelection = { selectionController.clear() }
+                )
+            } else {
+                TimelineToolbar(
+                    toolbarMode = uiState.toolbarMode,
+                    canUndo = uiState.canUndo,
+                    canRedo = uiState.canRedo,
+                    splitButtonEnabled = splitButtonEnabled,
+                    onPrimaryTool = { label ->
+                        when (label) {
+                            "Edit" -> viewModel.onPrimaryToolClicked(label)
+                            "Audio" -> onAddMusic?.invoke() ?: launchAudioPicker()
+                            "Text" -> onAddText?.invoke() ?: run { showTextSheet = true }
+                            "Overlay" -> onAddOverlay?.invoke() ?: launchVisualPicker()
+                            else -> comingSoonTool = label
+                        }
+                    },
+                    onEditTool = { action ->
+                        Log.d(SCREEN_TAG, "BOTTOM_TOOLBAR_CLICK_RECEIVED action=${action.label}")
+                        if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
+                            Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
+                        } else {
+                            if (action == EditToolAction.Split) {
+                                Log.d(
+                                    SCREEN_TAG,
+                                    "SPLIT_BUTTON_TAP candidateClipId=${splitCandidateClip?.id} selectedClipId=${uiState.selectedClipId} currentSegment=${uiState.currentSegment?.clipId} " +
+                                        "playheadMs=${uiState.globalProjectTimeMs}"
+                                )
+                                Log.d(SCREEN_TAG, "SPLIT_ACTION_DISPATCHED source=bottomToolbar handler=existingViewModel")
+                            }
+                            viewModel.onEditToolClicked(action)
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         containerColor = AppColors.Background
     ) { padding ->
