@@ -27,7 +27,8 @@ class EffectExportStageTest {
                 item(id = "middle", effectId = "tint", zOrder = 5)
             ),
             registry = registry,
-            map = map
+            map = map,
+            releasePolicy = readyPolicy("tint")
         )
 
         assertEquals(listOf(1, 5, 10), result.attachments.map { it.zOrder })
@@ -42,6 +43,7 @@ class EffectExportStageTest {
             effects = listOf(item(effectId = "missing")),
             registry = EffectRegistry(),
             map = map,
+            releasePolicy = readyPolicy("missing"),
             logger = logs::add
         )
 
@@ -57,7 +59,8 @@ class EffectExportStageTest {
         val provider = EffectExportStage.build(
             effects = listOf(item(effectId = "tint", params = mapOf("intensity" to EffectParamValue.Constant(0.9f)))),
             registry = registry,
-            map = map
+            map = map,
+            releasePolicy = readyPolicy("tint")
         ).attachments.single().provider
 
         assertEquals(0.9f, provider.valueAt("intensity", 0L), 0f)
@@ -82,6 +85,7 @@ class EffectExportStageTest {
             ),
             registry = registry,
             map = map,
+            releasePolicy = readyPolicy("tint"),
             logger = logs::add
         ).attachments.single().provider
 
@@ -99,6 +103,7 @@ class EffectExportStageTest {
             effects = listOf(item(effectId = "tint", params = mapOf("intensity" to EffectParamValue.Constant(3f)))),
             registry = registry,
             map = map,
+            releasePolicy = readyPolicy("tint"),
             logger = logs::add
         ).attachments.single().provider
 
@@ -120,7 +125,8 @@ class EffectExportStageTest {
         val attachment = EffectExportStage.build(
             effects = listOf(item(effectId = "tint", startMs = 2_550L, endMs = 2_800L)),
             registry = registry,
-            map = map
+            map = map,
+            releasePolicy = readyPolicy("tint")
         ).attachments.single()
 
         assertEquals(2_275_000L, attachment.windowStartUs)
@@ -152,7 +158,8 @@ class EffectExportStageTest {
                 )
             ),
             registry = registry,
-            map = map
+            map = map,
+            releasePolicy = readyPolicy("tint")
         ).attachments.single().provider
 
         assertEquals(0f, provider.valueAt("intensity", 2_275_000L), 0f)
@@ -169,7 +176,8 @@ class EffectExportStageTest {
         val constant = EffectExportStage.build(
             effects = listOf(item(effectId = "tint", params = mapOf("intensity" to EffectParamValue.Constant(0.8f)))),
             registry = registry,
-            map = map
+            map = map,
+            releasePolicy = readyPolicy("tint")
         ).attachments.single().provider
         val keyframed = EffectExportStage.build(
             effects = listOf(
@@ -179,11 +187,102 @@ class EffectExportStageTest {
                 )
             ),
             registry = registry,
-            map = map
+            map = map,
+            releasePolicy = readyPolicy("tint")
         ).attachments.single().provider
 
         assertTrue(constant is ConstantParams)
         assertTrue(keyframed is KeyframedParams)
+    }
+
+    @Test
+    fun `registered effects are skipped when not export ready`() {
+        val logs = mutableListOf<String>()
+        val registry = registryWith("tint")
+        val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
+
+        val result = EffectExportStage.build(
+            effects = listOf(item(effectId = "tint")),
+            registry = registry,
+            map = map,
+            logger = logs::add
+        )
+
+        assertTrue(result.attachments.isEmpty())
+        assertTrue(logs.any { it.contains("EFFECT_EXPORT_SKIPPED reason=not_export_ready") })
+    }
+
+    @Test
+    fun `export ready effects are included`() {
+        val registry = registryWith("tint")
+        val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
+
+        val result = EffectExportStage.build(
+            effects = listOf(item(effectId = "tint")),
+            registry = registry,
+            map = map,
+            releasePolicy = readyPolicy("tint")
+        )
+
+        assertEquals(listOf("tint"), result.attachments.map { it.effectId })
+    }
+
+    @Test
+    fun `zero effect items remain inert`() {
+        val registry = registryWith("tint")
+        val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
+
+        val result = EffectExportStage.build(
+            effects = emptyList(),
+            registry = registry,
+            map = map
+        )
+
+        assertTrue(result.attachments.isEmpty())
+        assertTrue(result.effects.isEmpty())
+    }
+
+    @Test
+    fun `scope filtering is unchanged before release filtering`() {
+        val logs = mutableListOf<String>()
+        val registry = registryWith("tint")
+        val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
+
+        val result = EffectExportStage.build(
+            effects = listOf(item(effectId = "tint", scope = EffectScope.CLIP)),
+            registry = registry,
+            map = map,
+            releasePolicy = readyPolicy("tint"),
+            logger = logs::add
+        )
+
+        assertTrue(result.attachments.isEmpty())
+        assertTrue(logs.any { it.contains("EFFECT_EXPORT_SKIP_SCOPE") })
+        assertTrue(logs.none { it.contains("reason=not_export_ready") })
+    }
+
+    @Test
+    fun `export filtering does not alter ordering of included effects`() {
+        val registry = EffectRegistry().apply {
+            register(registration("tint"))
+            register(registration("grain"))
+            register(registration("blur"))
+        }
+        val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
+
+        val result = EffectExportStage.build(
+            effects = listOf(
+                item(id = "late", effectId = "tint", zOrder = 10),
+                item(id = "middle", effectId = "grain", zOrder = 5),
+                item(id = "early", effectId = "blur", zOrder = 1)
+            ),
+            registry = registry,
+            map = map,
+            releasePolicy = readyPolicy("tint", "blur")
+        )
+
+        assertEquals(listOf("blur", "tint"), result.attachments.map { it.effectId })
+        assertEquals(listOf(1, 10), result.attachments.map { it.zOrder })
     }
 
     private fun registryWith(
@@ -191,19 +290,24 @@ class EffectExportStageTest {
         specs: List<ParamSpec> = listOf(ParamSpec("intensity", "Intensity", 0f, 1f, 0.5f))
     ): EffectRegistry {
         val registry = EffectRegistry()
-        registry.register(
-            EffectRegistration(
-                descriptor = EffectDescriptor(
-                    id = id,
-                    displayName = id,
-                    category = EffectCategory.TRENDY,
-                    paramSpecs = specs
-                ),
-                factory = EffectFactory { _, _, _ -> FakeGlEffect }
-            )
-        )
+        registry.register(registration(id, specs))
         return registry
     }
+
+    private fun registration(
+        id: String,
+        specs: List<ParamSpec> = listOf(ParamSpec("intensity", "Intensity", 0f, 1f, 0.5f))
+    ) = EffectRegistration(
+        descriptor = EffectDescriptor(
+            id = id,
+            displayName = id,
+            category = EffectCategory.TRENDY,
+            paramSpecs = specs
+        ),
+        factory = EffectFactory { _, _, _ -> FakeGlEffect }
+    )
+
+    private fun readyPolicy(vararg ids: String) = EffectReleasePolicy(exportReadyIds = ids.toSet())
 
     private fun defaultSpecs() = listOf(
         ParamSpec("intensity", "Intensity", 0f, 1f, 0.5f),
@@ -216,12 +320,13 @@ class EffectExportStageTest {
         startMs: Long = 0L,
         endMs: Long = 1_000L,
         zOrder: Int = 0,
+        scope: EffectScope = EffectScope.GLOBAL,
         params: Map<String, EffectParamValue> = emptyMap()
     ) = EffectItem(
         id = id,
         projectId = "project",
         effectId = effectId,
-        scope = EffectScope.GLOBAL,
+        scope = scope,
         startMs = startMs,
         endMs = endMs,
         zOrder = zOrder,

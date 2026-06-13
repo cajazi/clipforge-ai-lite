@@ -30,6 +30,7 @@ object EffectExportStage {
         effects: List<EffectItem>,
         registry: EffectRegistry,
         map: TimelineToCompositionTimeMap,
+        releasePolicy: EffectReleasePolicy = EffectReleasePolicy(),
         logger: (String) -> Unit = {}
     ): Result {
         val attachments = effects
@@ -42,6 +43,10 @@ object EffectExportStage {
                 val registration = registry.get(item.effectId)
                 if (registration == null) {
                     logger("EFFECT_EXPORT_UNKNOWN_ID id=${item.id} effectId=${item.effectId}")
+                    return@mapNotNull null
+                }
+                if (!releasePolicy.isExportReady(item.effectId)) {
+                    logger("EFFECT_EXPORT_SKIPPED reason=not_export_ready id=${item.id} effectId=${item.effectId}")
                     return@mapNotNull null
                 }
 
