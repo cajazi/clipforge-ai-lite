@@ -25,6 +25,8 @@ import com.clipforge.ai.core.designsystem.AppColors
 fun EffectActionBar(
     state: EffectActionBarState,
     onDelete: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onClearSelection: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -58,12 +60,28 @@ fun EffectActionBar(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Text(
-            text = "Delete",
-            color = AppColors.Error,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.clickable(onClick = onDelete)
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Undo",
+                color = if (state.canUndo) Color.White else AppColors.TextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable(enabled = state.canUndo, onClick = onUndo)
+            )
+            Text(
+                text = "Redo",
+                color = if (state.canRedo) Color.White else AppColors.TextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable(enabled = state.canRedo, onClick = onRedo)
+            )
+            Text(
+                text = "Delete",
+                color = AppColors.Error,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable(onClick = onDelete)
+            )
+        }
     }
 }

@@ -1,9 +1,13 @@
 package com.clipforge.ai.presentation.effects
 
 import com.clipforge.ai.core.effects.EffectScope
+import com.clipforge.ai.domain.history.DeleteEffectCommand
+import com.clipforge.ai.domain.repository.EffectRepository
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.selection.SelectionController
 import com.clipforge.ai.domain.selection.SelectionTarget
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,6 +49,22 @@ class EffectActionBarModelTest {
         assertEquals("effect-1", state.selectedEffectId)
         assertEquals("Vhs", state.label)
         assertEquals(listOf(EffectAction.Delete), state.actions)
+        assertFalse(state.canUndo)
+        assertFalse(state.canRedo)
+    }
+
+    @Test
+    fun `effect action bar exposes undo redo availability`() {
+        val state = buildEffectActionBarState(
+            effects = listOf(effect("effect-1", effectId = "vhs")),
+            selectionTarget = SelectionTarget.Effect("effect-1"),
+            canUndo = true,
+            canRedo = true
+        )
+
+        assertTrue(state.visible)
+        assertTrue(state.canUndo)
+        assertTrue(state.canRedo)
     }
 
     @Test
@@ -75,30 +95,32 @@ class EffectActionBarModelTest {
     }
 
     @Test
-    fun `delete selected effect invokes delete and clears selection`() = runBlocking {
+    fun `delete command invokes delete and clears selection`() = runBlocking {
+        val repository = FakeEffectRepository(listOf(effect("effect-1")))
         val controller = SelectionController(SelectionTarget.Effect("effect-1"))
-        val deleted = mutableListOf<String>()
 
-        val handled = deleteSelectedEffect(controller) { effectId ->
-            deleted += effectId
-        }
+        DeleteEffectCommand(
+            repository = repository,
+            effect = effect("effect-1"),
+            selectionController = controller
+        ).execute()
 
-        assertTrue(handled)
-        assertEquals(listOf("effect-1"), deleted)
+        assertEquals(emptyList<EffectItem>(), repository.getEffectsForProject("project"))
         assertEquals(SelectionTarget.None, controller.current)
     }
 
     @Test
-    fun `delete selected effect is ignored for clip selection`() = runBlocking {
+    fun `delete command preserves clip selection when effect was not selected`() = runBlocking {
+        val repository = FakeEffectRepository(listOf(effect("effect-1")))
         val controller = SelectionController(SelectionTarget.Clip("clip-1"))
-        val deleted = mutableListOf<String>()
 
-        val handled = deleteSelectedEffect(controller) { effectId ->
-            deleted += effectId
-        }
+        DeleteEffectCommand(
+            repository = repository,
+            effect = effect("effect-1"),
+            selectionController = controller
+        ).execute()
 
-        assertFalse(handled)
-        assertEquals(emptyList<String>(), deleted)
+        assertEquals(emptyList<EffectItem>(), repository.getEffectsForProject("project"))
         assertEquals(SelectionTarget.Clip("clip-1"), controller.current)
     }
 
@@ -115,4 +137,25 @@ class EffectActionBarModelTest {
         zOrder = 0,
         params = emptyMap()
     )
+
+    private class FakeEffectRepository(initial: List<EffectItem>) : EffectRepository {
+        private val effects = MutableStateFlow(initial)
+
+        override suspend fun getEffectsForProject(projectId: String): List<EffectItem> =
+            effects.value.filter { it.projectId == projectId }
+
+        override fun observeEffectsForProject(projectId: String): Flow<List<EffectItem>> = effects
+
+        override suspend fun upsertEffect(effect: EffectItem) {
+            effects.value = effects.value.filterNot { it.id == effect.id } + effect
+        }
+
+        override suspend fun deleteEffect(id: String) {
+            effects.value = effects.value.filterNot { it.id == id }
+        }
+
+        override suspend fun deleteEffectsForProject(projectId: String) {
+            effects.value = effects.value.filterNot { it.projectId == projectId }
+        }
+    }
 }

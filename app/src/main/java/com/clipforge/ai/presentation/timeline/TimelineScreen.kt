@@ -82,6 +82,9 @@ import com.clipforge.ai.core.designsystem.AppSpacing
 import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
+import com.clipforge.ai.domain.history.DeleteEffectCommand
+import com.clipforge.ai.domain.history.HistoryRegistry
+import com.clipforge.ai.domain.history.SelectEffectCommand
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.MediaType
 import com.clipforge.ai.domain.model.TimelineSegment
@@ -91,7 +94,6 @@ import com.clipforge.ai.domain.selection.SelectionTarget
 import com.clipforge.ai.presentation.effects.EffectActionBar
 import com.clipforge.ai.presentation.effects.TimelineEffectLane
 import com.clipforge.ai.presentation.effects.buildEffectActionBarState
-import com.clipforge.ai.presentation.effects.deleteSelectedEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -169,13 +171,20 @@ fun TimelineScreen(
     val effectPreviewControllerRef = remember { mutableStateOf<EffectPreviewController?>(null) }
     val selectionController = remember { SelectionController() }
     val selectionTarget by selectionController.selection.collectAsState()
+    val effectHistoryRegistry = remember { HistoryRegistry() }
+    val effectHistoryState by effectHistoryRegistry.state.collectAsState()
     val effectRepository = remember(context) { (context.applicationContext as ClipForgeApp).effectRepository }
     val timelineEffects by remember(projectId, effectRepository) {
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
     val visibleSelectedClipId = selectionTarget.clipId
-    val effectActionBarState = remember(timelineEffects, selectionTarget) {
-        buildEffectActionBarState(timelineEffects, selectionTarget)
+    val effectActionBarState = remember(timelineEffects, selectionTarget, effectHistoryState) {
+        buildEffectActionBarState(
+            effects = timelineEffects,
+            selectionTarget = selectionTarget,
+            canUndo = effectHistoryState.canUndo,
+            canRedo = effectHistoryState.canRedo
+        )
     }
     val screenScope = rememberCoroutineScope()
 
@@ -312,10 +321,24 @@ fun TimelineScreen(
                     state = effectActionBarState,
                     onDelete = {
                         screenScope.launch {
-                            deleteSelectedEffect(selectionController) { effectId ->
-                                effectRepository.deleteEffect(effectId)
+                            val selectedEffectId = effectActionBarState.selectedEffectId
+                            val selectedEffect = timelineEffects.firstOrNull { it.id == selectedEffectId }
+                            if (selectedEffect != null) {
+                                effectHistoryRegistry.execute(
+                                    DeleteEffectCommand(
+                                        repository = effectRepository,
+                                        effect = selectedEffect,
+                                        selectionController = selectionController
+                                    )
+                                )
                             }
                         }
+                    },
+                    onUndo = {
+                        screenScope.launch { effectHistoryRegistry.undo() }
+                    },
+                    onRedo = {
+                        screenScope.launch { effectHistoryRegistry.redo() }
                     },
                     onClearSelection = { selectionController.clear() }
                 )
@@ -420,7 +443,14 @@ fun TimelineScreen(
                         viewModel.selectClip(clipId)
                     },
                     onSelectEffect = { effectId ->
-                        selectionController.selectEffect(effectId)
+                        screenScope.launch {
+                            effectHistoryRegistry.execute(
+                                SelectEffectCommand(
+                                    selectionController = selectionController,
+                                    effectId = effectId
+                                )
+                            )
+                        }
                     },
                     onAddMusic = { onAddMusic?.invoke() ?: launchAudioPicker() },
                     onAddText = { onAddText?.invoke() ?: run { showTextSheet = true } },
