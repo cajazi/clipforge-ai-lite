@@ -79,6 +79,9 @@ import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.R
 import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.core.designsystem.AppSpacing
+import com.clipforge.ai.core.effects.EffectCategory
+import com.clipforge.ai.core.effects.EffectReleasePolicy
+import com.clipforge.ai.core.effects.ExportEffectRegistry
 import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
@@ -91,12 +94,15 @@ import com.clipforge.ai.domain.model.TransitionType
 import com.clipforge.ai.domain.selection.SelectionController
 import com.clipforge.ai.domain.selection.SelectionTarget
 import com.clipforge.ai.presentation.effects.EffectActionBar
+import com.clipforge.ai.presentation.effects.EffectCatalogSheet
 import com.clipforge.ai.presentation.effects.TimelineEffectLane
 import com.clipforge.ai.presentation.effects.buildEffectActionBarState
+import com.clipforge.ai.presentation.effects.buildEffectCatalogState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.abs
@@ -164,6 +170,8 @@ fun TimelineScreen(
     var showVolumeSheet by remember { mutableStateOf(false) }
     var showTransformSheet by remember { mutableStateOf(false) }
     var showTextSheet by remember { mutableStateOf(false) }
+    var showEffectCatalogSheet by rememberSaveable { mutableStateOf(false) }
+    var selectedEffectCatalogCategory by rememberSaveable { mutableStateOf(EffectCategory.TRENDY) }
     var screenRecompositionCount by remember { mutableIntStateOf(0) }
     var previewVolumeClipId by remember { mutableStateOf<String?>(null) }
     var previewVolumeMultiplier by remember { mutableFloatStateOf(1f) }
@@ -177,6 +185,12 @@ fun TimelineScreen(
     val timelineEffects by remember(projectId, effectRepository) {
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
+    val effectCatalogState = remember {
+        buildEffectCatalogState(
+            registry = ExportEffectRegistry.registry,
+            releasePolicy = EffectReleasePolicy()
+        )
+    }
     val visibleSelectedClipId = selectionTarget.clipId
     val effectActionBarState = remember(timelineEffects, selectionTarget, effectHistoryState) {
         buildEffectActionBarState(
@@ -342,6 +356,18 @@ fun TimelineScreen(
                     },
                     onClearSelection = { selectionController.clear() }
                 )
+            } else if (showEffectCatalogSheet) {
+                EffectCatalogSheet(
+                    visible = true,
+                    state = effectCatalogState,
+                    selectedCategory = selectedEffectCatalogCategory,
+                    onDismiss = { showEffectCatalogSheet = false },
+                    onCategorySelected = { selectedEffectCatalogCategory = it },
+                    onTileClicked = { tile ->
+                        Log.d(SCREEN_TAG, "effectCatalogTileClickIgnored effectId=${tile.effectId}")
+                    },
+                    modifier = Modifier.navigationBarsPadding()
+                )
             } else {
                 TimelineToolbar(
                     toolbarMode = uiState.toolbarMode,
@@ -353,13 +379,16 @@ fun TimelineScreen(
                             "Edit" -> viewModel.onPrimaryToolClicked(label)
                             "Audio" -> onAddMusic?.invoke() ?: launchAudioPicker()
                             "Text" -> onAddText?.invoke() ?: run { showTextSheet = true }
+                            "Effects" -> showEffectCatalogSheet = true
                             "Overlay" -> onAddOverlay?.invoke() ?: launchVisualPicker()
                             else -> comingSoonTool = label
                         }
                     },
                     onEditTool = { action ->
                         Log.d(SCREEN_TAG, "BOTTOM_TOOLBAR_CLICK_RECEIVED action=${action.label}")
-                        if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
+                        if (action == EditToolAction.Effects) {
+                            showEffectCatalogSheet = true
+                        } else if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
                             Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
                         } else {
                             if (action == EditToolAction.Split) {

@@ -91,7 +91,7 @@ fun EffectCatalogSheet(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No effects available",
+                    text = "No effects available yet",
                     color = AppColors.TextMuted,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium

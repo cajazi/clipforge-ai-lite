@@ -35,7 +35,7 @@ class EffectCatalogAndParamActionBarTest {
         }
 
         composeRule.onNodeWithTag(EFFECT_CATALOG_EMPTY_TAG).assertIsDisplayed()
-        composeRule.onNodeWithText("No effects available").assertIsDisplayed()
+        composeRule.onNodeWithText("No effects available yet").assertIsDisplayed()
         composeRule.onNodeWithTag(EFFECT_CATALOG_TABS_TAG).assertIsDisplayed()
         EffectCategory.ordered.forEach { category ->
             composeRule.onNodeWithText(category.displayName).assertIsDisplayed()
