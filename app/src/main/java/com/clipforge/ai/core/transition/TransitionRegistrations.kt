@@ -16,6 +16,7 @@ import com.clipforge.ai.core.transition.renderers.RotationTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.SlideTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.WhipPanTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.WipeTransitionRenderer
+import com.clipforge.ai.core.transition.renderers.BounceTransitionRenderer
 import com.clipforge.ai.core.transition.renderers.ZoomTransitionRenderer
 import com.clipforge.ai.domain.model.TransitionType
 
@@ -54,6 +55,7 @@ object TransitionRegistrations {
     val PUSH_DOWN = TransitionId("push_down")
     val ZOOM_IN = TransitionId("zoom_in")
     val ZOOM_OUT = TransitionId("zoom_out")
+    val BOUNCE = TransitionId("bounce")
     val SPIN = TransitionId("spin")
     val ROTATE = TransitionId("rotate")
     val CAMERA_ROLL = TransitionId("camera_roll")
@@ -114,6 +116,7 @@ object TransitionRegistrations {
         TransitionType.PUSH_DOWN -> PUSH_DOWN
         TransitionType.ZOOM_IN -> ZOOM_IN
         TransitionType.ZOOM_OUT -> ZOOM_OUT
+        TransitionType.BOUNCE -> BOUNCE
         TransitionType.SPIN -> SPIN
         TransitionType.ROTATE -> ROTATE
         TransitionType.CAMERA_ROLL -> CAMERA_ROLL
@@ -160,6 +163,7 @@ object TransitionRegistrations {
         val slide = SlideTransitionRenderer()
         val push = PushTransitionRenderer()
         val zoom = ZoomTransitionRenderer()
+        val bounce = BounceTransitionRenderer()
         val rotation = RotationTransitionRenderer()
         val cube = CubeTransitionRenderer()
         val flip = FlipTransitionRenderer()
@@ -204,6 +208,7 @@ object TransitionRegistrations {
         val sSlide = "Preparing slide transition..."
         val sPush = "Preparing push transition..."
         val sZoom = "Preparing zoom transition..."
+        val sBounce = "Preparing bounce transition..."
         val sRotation = "Preparing rotation transition..."
         val sCube = "Preparing cube transition..."
         val sFlip = "Preparing flip transition..."
@@ -234,6 +239,7 @@ object TransitionRegistrations {
         reg(PUSH_DOWN, "Push Down", TransitionCategory.MOTION, TimingModel.Overlap, push, sPush)
         reg(ZOOM_IN, "Zoom In", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
         reg(ZOOM_OUT, "Zoom Out", TransitionCategory.MOTION, TimingModel.Overlap, zoom, sZoom)
+        reg(BOUNCE, "Bounce", TransitionCategory.MOTION, TimingModel.Overlap, bounce, sBounce)
         reg(SPIN, "Spin", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(ROTATE, "Rotate", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)
         reg(CAMERA_ROLL, "Camera Roll", TransitionCategory.MOTION, TimingModel.Overlap, rotation, sRotation)

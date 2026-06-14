@@ -36,6 +36,8 @@ object CrossfadeRenderPlan {
     private val PUSH_TYPES = setOf("PUSH_LEFT", "PUSH_RIGHT", "PUSH_UP", "PUSH_DOWN")
     // Zoom transitions: clip B zooms into place over static clip A.
     private val ZOOM_TYPES = setOf("ZOOM_IN", "ZOOM_OUT")
+    // Bounce transition: clip B pops in with an elastic overshoot (zoom-class, single variant).
+    private val BOUNCE_TYPES = setOf("BOUNCE")
     // Rotation transitions: A rotates out while B rotates/scales into place.
     private val ROTATION_TYPES = setOf("SPIN", "ROTATE", "CAMERA_ROLL")
     // Cube transitions: 2.5D cube turn approximation (horizontal and vertical).
@@ -107,6 +109,11 @@ object CrossfadeRenderPlan {
             val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
             val pathB: String, val bHeadStartMs: Long, val durationMs: Long,
             val mode: String
+        ) : Op()
+        /** Bounce clip B into place over a static clip A with an elastic overshoot. */
+        data class Bounce(
+            val pathA: String, val aTailStartMs: Long, val aEndMs: Long,
+            val pathB: String, val bHeadStartMs: Long, val durationMs: Long
         ) : Op()
         /** Rotate A and cached B over the transition window. */
         data class Rotation(
@@ -244,6 +251,8 @@ object CrossfadeRenderPlan {
             val isZoom = BooleanArray(entries.size)
             val zoomDurArr = LongArray(entries.size)
             val zoomModeArr = arrayOfNulls<String>(entries.size)
+            val isBounce = BooleanArray(entries.size)
+            val bounceDurArr = LongArray(entries.size)
             val isRotation = BooleanArray(entries.size)
             val rotationDurArr = LongArray(entries.size)
             val rotationModeArr = arrayOfNulls<String>(entries.size)
@@ -310,6 +319,10 @@ object CrossfadeRenderPlan {
                     zoomModeArr[i] = t
                     zoomDurArr[i] = durMs
                     Log.d(TAG, "boundary $i->${i + 1} plan=ZOOM requestedMs=$durMs mode=$t")
+                } else if (t in BOUNCE_TYPES && durMs > 0L) {
+                    isBounce[i] = true
+                    bounceDurArr[i] = durMs
+                    Log.d(TAG, "boundary $i->${i + 1} plan=BOUNCE requestedMs=$durMs")
                 } else if (t in ROTATION_TYPES && durMs > 0L) {
                     isRotation[i] = true
                     rotationModeArr[i] = t
@@ -368,6 +381,7 @@ object CrossfadeRenderPlan {
                 isSlide[i] -> slideDurArr[i]
                 isPush[i] -> pushDurArr[i]
                 isZoom[i] -> zoomDurArr[i]
+                isBounce[i] -> bounceDurArr[i]
                 isRotation[i] -> rotationDurArr[i]
                 isCube[i] -> cubeDurArr[i]
                 isFlip[i] -> flipDurArr[i]
@@ -389,6 +403,7 @@ object CrossfadeRenderPlan {
                     isSlide[i] -> slideDurArr[i] = consumptionMs
                     isPush[i] -> pushDurArr[i] = consumptionMs
                     isZoom[i] -> zoomDurArr[i] = consumptionMs
+                    isBounce[i] -> bounceDurArr[i] = consumptionMs
                     isRotation[i] -> rotationDurArr[i] = consumptionMs
                     isCube[i] -> cubeDurArr[i] = consumptionMs
                     isFlip[i] -> flipDurArr[i] = consumptionMs
@@ -441,6 +456,7 @@ object CrossfadeRenderPlan {
                     isSlide[i] = false
                     isPush[i] = false
                     isZoom[i] = false
+                    isBounce[i] = false
                     isRotation[i] = false
                     isCube[i] = false
                     isFlip[i] = false
@@ -462,6 +478,7 @@ object CrossfadeRenderPlan {
                         "slide=${isSlide[i]} slideDir=${slideDirArr[i]} " +
                         "push=${isPush[i]} pushDir=${pushDirArr[i]} " +
                         "zoom=${isZoom[i]} zoomMode=${zoomModeArr[i]} " +
+                        "bounce=${isBounce[i]} " +
                         "rotation=${isRotation[i]} rotationMode=${rotationModeArr[i]} " +
                         "cube=${isCube[i]} cubeDir=${cubeDirArr[i]} " +
                         "flip=${isFlip[i]} flipDir=${flipDirArr[i]} " +
@@ -482,11 +499,11 @@ object CrossfadeRenderPlan {
                 val incomingBoundary = i - 1
                 val hasDipIncoming = incomingBoundary >= 0 && isDip[incomingBoundary]
                 val hasOverlapIncoming = incomingBoundary >= 0 &&
-                    (isCrossfade[incomingBoundary] || isFlash[incomingBoundary] || isFilmBurn[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isBlur[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary] || isWipe[incomingBoundary] || isGlitchPro[incomingBoundary])
+                    (isCrossfade[incomingBoundary] || isFlash[incomingBoundary] || isFilmBurn[incomingBoundary] || isSlide[incomingBoundary] || isPush[incomingBoundary] || isZoom[incomingBoundary] || isBounce[incomingBoundary] || isRotation[incomingBoundary] || isCube[incomingBoundary] || isFlip[incomingBoundary] || isPageTurn[incomingBoundary] || isBlur[incomingBoundary] || isWhipPan[incomingBoundary] || isMotionBlur[incomingBoundary] || isWipe[incomingBoundary] || isGlitchPro[incomingBoundary])
                 val outgoingBoundary = i
                 val hasDipOutgoing = outgoingBoundary < entries.lastIndex && isDip[outgoingBoundary]
                 val hasOverlapOutgoing = outgoingBoundary < entries.lastIndex &&
-                    (isCrossfade[outgoingBoundary] || isFlash[outgoingBoundary] || isFilmBurn[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isBlur[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary] || isWipe[outgoingBoundary] || isGlitchPro[outgoingBoundary])
+                    (isCrossfade[outgoingBoundary] || isFlash[outgoingBoundary] || isFilmBurn[outgoingBoundary] || isSlide[outgoingBoundary] || isPush[outgoingBoundary] || isZoom[outgoingBoundary] || isBounce[outgoingBoundary] || isRotation[outgoingBoundary] || isCube[outgoingBoundary] || isFlip[outgoingBoundary] || isPageTurn[outgoingBoundary] || isBlur[outgoingBoundary] || isWhipPan[outgoingBoundary] || isMotionBlur[outgoingBoundary] || isWipe[outgoingBoundary] || isGlitchPro[outgoingBoundary])
 
                 // Crossfade/Slide/Zoom are overlap families: the transition op already
                 // renders A's tail and samples B's head, so the surrounding plain clips
@@ -633,6 +650,23 @@ object CrossfadeRenderPlan {
                                 bHeadStartMs = next.trimStartMs,
                                 durationMs = zMs,
                                 mode = zoomModeArr[i] ?: "ZOOM_IN"
+                            )
+                        )
+                    }
+                }
+                // Bounce: clip B pops in over A's tail with an elastic overshoot (overlap-style).
+                if (i < entries.size - 1 && isBounce[i]) {
+                    val bMs = bounceDurArr[i]
+                    val next = entries[i + 1]
+                    if (bMs > 0L) {
+                        ops.add(
+                            Op.Bounce(
+                                pathA = e.path,
+                                aTailStartMs = clipEnd - bMs,
+                                aEndMs = clipEnd,
+                                pathB = next.path,
+                                bHeadStartMs = next.trimStartMs,
+                                durationMs = bMs
                             )
                         )
                     }
@@ -812,6 +846,7 @@ object CrossfadeRenderPlan {
                     is Op.Slide -> Log.d(TAG, "[$idx] SLIDE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Push -> Log.d(TAG, "[$idx] PUSH dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Zoom -> Log.d(TAG, "[$idx] ZOOM mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
+                    is Op.Bounce -> Log.d(TAG, "[$idx] BOUNCE ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Rotation -> Log.d(TAG, "[$idx] ROTATION mode=${op.mode} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Cube -> Log.d(TAG, "[$idx] CUBE dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")
                     is Op.Flip -> Log.d(TAG, "[$idx] FLIP dir=${op.direction} ${op.durationMs}ms  A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}]  B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}]")

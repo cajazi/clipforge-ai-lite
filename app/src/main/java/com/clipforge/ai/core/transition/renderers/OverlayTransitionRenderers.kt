@@ -7,6 +7,7 @@ import com.clipforge.ai.core.gl.CubeBitmapOverlay
 import com.clipforge.ai.core.gl.CubeDirection
 import com.clipforge.ai.core.gl.CubeGlEffect
 import com.clipforge.ai.core.gl.BlurredCrossfadeBitmapOverlay
+import com.clipforge.ai.core.gl.BounceOverlay
 import com.clipforge.ai.core.gl.CrossBlurGlEffect
 import com.clipforge.ai.core.gl.CrossfadeBitmapOverlay
 import com.clipforge.ai.core.gl.DipToColorOverlay
@@ -192,6 +193,20 @@ class ZoomTransitionRenderer : TransitionRenderer {
         val raw = ctx.param(TransitionParamKeys.MODE) ?: "ZOOM_IN"
         val mode = ZoomOverlay.Mode.valueOf(raw.removePrefix("ZOOM_"))
         val overlay = ZoomOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs, mode)
+        return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, OverlayEffect(listOf(overlay))))
+    }
+}
+
+/** Bounce. Clip B pops in over static clip A with an elastic overshoot. Mirrors Op.Bounce. */
+@UnstableApi
+class BounceTransitionRenderer : TransitionRenderer {
+    override val supportsExport = true
+    override fun emit(ctx: SegmentContext, registerCleanup: (() -> Unit) -> Unit): List<EditedMediaItem> {
+        val cache = OverlayRenderSupport.slideProfileCache(ctx.pathB, ctx.bHeadStartMs, ctx.durationMs)
+        cache.build()
+        check(!cache.isEmpty()) { "Bounce cache empty pathB=${ctx.pathB}" }
+        registerCleanup { cache.release() }
+        val overlay = BounceOverlay(cache, ctx.compositionStartUs, ctx.compositionEndUs)
         return listOf(OverlayRenderSupport.overlayItem(ctx.pathA, ctx.aTailStartMs, ctx.aEndMs, OverlayEffect(listOf(overlay))))
     }
 }

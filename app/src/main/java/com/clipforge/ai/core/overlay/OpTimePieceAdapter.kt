@@ -25,6 +25,8 @@ object OpTimePieceAdapter {
                 overlap(op.durationMs)
             is CrossfadeRenderPlan.Op.Zoom ->
                 overlap(op.durationMs)
+            is CrossfadeRenderPlan.Op.Bounce ->
+                overlap(op.durationMs)
             is CrossfadeRenderPlan.Op.Rotation ->
                 overlap(op.durationMs)
             is CrossfadeRenderPlan.Op.Cube ->

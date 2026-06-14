@@ -156,6 +156,13 @@ object CrossfadeExecutor {
             windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
             params = mapOf(TransitionParamKeys.MODE to op.mode)
         )
+        is CrossfadeRenderPlan.Op.Bounce -> Dispatch(
+            id = TransitionRegistrations.BOUNCE,
+            pathA = op.pathA, aTailStartMs = op.aTailStartMs, aEndMs = op.aEndMs,
+            pathB = op.pathB, bHeadStartMs = op.bHeadStartMs,
+            windowDurationMs = op.durationMs, occupiedMs = op.durationMs,
+            params = emptyMap()
+        )
         is CrossfadeRenderPlan.Op.Rotation -> Dispatch(
             id = when (op.mode.uppercase()) {
                 "ROTATE" -> TransitionRegistrations.ROTATE
@@ -407,6 +414,8 @@ object CrossfadeExecutor {
                 "op[$index]=PUSH pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} direction=${op.direction}"
             is CrossfadeRenderPlan.Op.Zoom ->
                 "op[$index]=ZOOM pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
+            is CrossfadeRenderPlan.Op.Bounce ->
+                "op[$index]=BOUNCE pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs}"
             is CrossfadeRenderPlan.Op.Rotation ->
                 "op[$index]=ROTATION pathA=${op.pathA} aTailStartMs=${op.aTailStartMs} aEndMs=${op.aEndMs} pathB=${op.pathB} bHeadStartMs=${op.bHeadStartMs} durationMs=${op.durationMs} mode=${op.mode}"
             is CrossfadeRenderPlan.Op.Cube ->
@@ -822,6 +831,37 @@ object CrossfadeExecutor {
                         )
                         Log.d(TAG, "ZOOM_ITEM_CREATE_AFTER index=$index itemCount=${items.size}")
                         Log.d(TAG, "ZOOM mode=${op.mode} ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs zoom=[$zoomStartUs..$zoomEndUs] fallback=NO")
+                        runningTimeMs += op.durationMs
+                    }
+                    is CrossfadeRenderPlan.Op.Bounce -> {
+                        onStage("Preparing bounce transition...")
+                        val bounceStartUs = runningTimeMs * 1000L
+                        val bounceEndUs = (runningTimeMs + op.durationMs) * 1000L
+                        val bounceFps = slideCacheFps(op.durationMs)
+                        val cache = CrossfadeFrameCache(
+                            clipPath = op.pathB,
+                            startUs = op.bHeadStartMs * 1000L,
+                            windowUs = op.durationMs * 1000L,
+                            fps = bounceFps,
+                            maxDimension = SLIDE_CACHE_MAX_DIMENSION,
+                            minCoveragePercent = SLIDE_MIN_COVERAGE_PERCENT,
+                            fallbackCoveragePercent = SLIDE_FAST_SAFE_COVERAGE_PERCENT,
+                            maxEstimatedBytes = SLIDE_MAX_CACHE_BYTES
+                        )
+                        Log.d(TAG, "BOUNCE_CACHE_BUILD_BEFORE index=$index pathB=${op.pathB} startUs=${op.bHeadStartMs * 1000L} windowUs=${op.durationMs * 1000L}")
+                        cache.build()
+                        Log.d(TAG, "BOUNCE_CACHE_BUILD_AFTER index=$index empty=${cache.isEmpty()}")
+                        if (cache.isEmpty()) {
+                            throw IllegalStateException("Bounce cache empty for op index=$index pathB=${op.pathB}")
+                        }
+                        caches.add(cache)
+                        val overlay = BounceOverlay(cache, bounceStartUs, bounceEndUs)
+                        items.add(
+                            EditedMediaItem.Builder(clip(op.pathA, op.aTailStartMs, op.aEndMs))
+                                .setEffects(Effects(emptyList(), listOf(OverlayEffect(listOf(overlay)))))
+                                .build()
+                        )
+                        Log.d(TAG, "BOUNCE ${op.durationMs}ms A=${op.pathA.substringAfterLast('/')}[${op.aTailStartMs}..${op.aEndMs}] B=${op.pathB.substringAfterLast('/')}[head ${op.bHeadStartMs}] @t=$runningTimeMs bounce=[$bounceStartUs..$bounceEndUs] fallback=NO")
                         runningTimeMs += op.durationMs
                     }
                     is CrossfadeRenderPlan.Op.Rotation -> {
