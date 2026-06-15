@@ -79,8 +79,10 @@ import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.R
 import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.core.designsystem.AppSpacing
+import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectCategory
 import com.clipforge.ai.core.effects.EffectReleasePolicy
+import com.clipforge.ai.core.effects.EffectScope
 import com.clipforge.ai.core.effects.ExportEffectRegistry
 import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
@@ -93,6 +95,9 @@ import com.clipforge.ai.domain.model.TimelineSegment
 import com.clipforge.ai.domain.model.TransitionType
 import com.clipforge.ai.domain.selection.SelectionController
 import com.clipforge.ai.domain.selection.SelectionTarget
+import com.clipforge.ai.presentation.animation.AnimationPickerSheet
+import com.clipforge.ai.presentation.animation.AnimationPickerViewModel
+import com.clipforge.ai.presentation.animation.buildAnimationPickerState
 import com.clipforge.ai.presentation.effects.EffectActionBar
 import com.clipforge.ai.presentation.effects.EffectCatalogSheet
 import com.clipforge.ai.presentation.effects.TimelineEffectLane
@@ -171,6 +176,7 @@ fun TimelineScreen(
     var showTransformSheet by remember { mutableStateOf(false) }
     var showTextSheet by remember { mutableStateOf(false) }
     var showEffectCatalogSheet by rememberSaveable { mutableStateOf(false) }
+    var showAnimationPickerSheet by rememberSaveable { mutableStateOf(false) }
     var selectedEffectCatalogCategory by rememberSaveable { mutableStateOf(EffectCategory.TRENDY) }
     var screenRecompositionCount by remember { mutableIntStateOf(0) }
     var previewVolumeClipId by remember { mutableStateOf<String?>(null) }
@@ -185,6 +191,22 @@ fun TimelineScreen(
     val timelineEffects by remember(projectId, effectRepository) {
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
+    val animationPickerViewModel = remember(projectId, effectRepository, historyRegistry) {
+        AnimationPickerViewModel(
+            projectId = projectId,
+            repository = effectRepository,
+            historyRegistry = historyRegistry
+        )
+    }
+    val animationPickerState = remember(timelineEffects) {
+        buildAnimationPickerState(
+            hasAnimation = timelineEffects.any {
+                it.projectId == projectId &&
+                    it.scope == EffectScope.GLOBAL &&
+                    it.effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION
+            }
+        )
+    }
     val effectCatalogState = remember {
         buildEffectCatalogState(
             registry = ExportEffectRegistry.registry,
@@ -327,7 +349,7 @@ fun TimelineScreen(
                     SCREEN_TAG,
                     "SPLIT_BUTTON_ENABLED_STATE enabled=$splitButtonEnabled candidateClipId=${splitCandidateClip?.id} selectedClipId=${uiState.selectedClipId} " +
                         "playheadMs=${uiState.globalProjectTimeMs} playheadInsideClip=$playheadInsideClip " +
-                        "blockingModal=${showSpeedSheet || showVolumeSheet || showTransformSheet || showTextSheet || comingSoonTool != null || placeholderTool != null}"
+                        "blockingModal=${showSpeedSheet || showVolumeSheet || showTransformSheet || showTextSheet || showAnimationPickerSheet || comingSoonTool != null || placeholderTool != null}"
                 )
             }
             if (effectActionBarState.visible) {
@@ -355,6 +377,29 @@ fun TimelineScreen(
                         screenScope.launch { historyRegistry.redo() }
                     },
                     onClearSelection = { selectionController.clear() }
+                )
+            } else if (showAnimationPickerSheet) {
+                AnimationPickerSheet(
+                    visible = true,
+                    state = animationPickerState,
+                    totalDurationMs = uiState.totalDurationMs,
+                    onDismiss = { showAnimationPickerSheet = false },
+                    onApplyPreset = { presetId ->
+                        screenScope.launch {
+                            if (uiState.totalDurationMs <= 0L) {
+                                Toast.makeText(context, "Add media first", Toast.LENGTH_SHORT).show()
+                            } else {
+                                animationPickerViewModel.applyPreset(presetId, uiState.totalDurationMs)
+                                showAnimationPickerSheet = false
+                            }
+                        }
+                    },
+                    onRemove = {
+                        screenScope.launch {
+                            animationPickerViewModel.removeAnimation()
+                            showAnimationPickerSheet = false
+                        }
+                    }
                 )
             } else if (showEffectCatalogSheet) {
                 EffectCatalogSheet(
@@ -388,6 +433,8 @@ fun TimelineScreen(
                         Log.d(SCREEN_TAG, "BOTTOM_TOOLBAR_CLICK_RECEIVED action=${action.label}")
                         if (action == EditToolAction.Effects) {
                             showEffectCatalogSheet = true
+                        } else if (action == EditToolAction.Animations) {
+                            showAnimationPickerSheet = true
                         } else if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
                             Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
                         } else {
@@ -3544,7 +3591,7 @@ private val editTimelineTools = listOf(
     TimelineToolbarTool("Transition", "T"),
     TimelineToolbarTool("Split", "Split"),
     TimelineToolbarTool("Volume", "Vol"),
-    TimelineToolbarTool("Animations", "Anim"),
+    TimelineToolbarTool("Animation", "Anim"),
     TimelineToolbarTool("Effects", "Fx"),
     TimelineToolbarTool("Delete", "Del"),
     TimelineToolbarTool("Speed", "1x"),
@@ -3590,7 +3637,7 @@ private fun editActionForLabel(label: String): EditToolAction? = when (label) {
     "Transition" -> EditToolAction.Transition
     "Split" -> EditToolAction.Split
     "Volume" -> EditToolAction.Volume
-    "Animations" -> EditToolAction.Animations
+    "Animation" -> EditToolAction.Animations
     "Effects" -> EditToolAction.Effects
     "Delete" -> EditToolAction.Delete
     "Speed" -> EditToolAction.Speed
