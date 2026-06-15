@@ -20,6 +20,7 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.clipforge.ai.ClipForgeApp
+import com.clipforge.ai.core.effects.EffectExportPolicy
 import com.clipforge.ai.core.effects.EffectExportStage
 import com.clipforge.ai.core.effects.ExportEffectRegistry
 import com.clipforge.ai.core.overlay.OpTimePieceAdapter
@@ -1307,6 +1308,7 @@ object CrossfadeExecutor {
                 effects = persistedEffects,
                 registry = ExportEffectRegistry.registry,
                 map = timeMap,
+                releasePolicy = EffectExportPolicy.current,
                 logger = { message -> Log.d(TAG, message) }
             ).effects
         } else {
