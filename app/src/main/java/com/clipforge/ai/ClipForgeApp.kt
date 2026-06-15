@@ -6,6 +6,8 @@ import com.clipforge.ai.core.ads.GoogleAdManager
 import com.clipforge.ai.core.auth.AuthManager
 import com.clipforge.ai.core.billing.BillingManager
 import com.clipforge.ai.core.billing.EntitlementManager
+import com.clipforge.ai.core.effects.ExportEffectRegistry
+import com.clipforge.ai.core.effects.registerTransformAnimationEffect
 import com.clipforge.ai.core.export.ExportManager
 import com.clipforge.ai.core.network.NetworkMonitor
 import com.clipforge.ai.core.storage.UserPreferencesManager
@@ -47,6 +49,7 @@ class ClipForgeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        ExportEffectRegistry.registry.registerTransformAnimationEffect()
         SupabaseClient.accessTokenProvider = { authManager.sessionManager.getAccessToken() }
         adManager.initialize(this)
         billingManager.initialize(this)
