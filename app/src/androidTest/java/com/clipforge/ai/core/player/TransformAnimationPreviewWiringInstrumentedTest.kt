@@ -94,7 +94,7 @@ class TransformAnimationPreviewWiringInstrumentedTest {
     }
 
     @Test
-    fun clipScopedTransformAnimationIsSkipped() = runBlocking {
+    fun clipScopedTransformAnimationIsApplied() = runBlocking {
         val repository = FakeRepository()
         val applied = mutableListOf<List<GlEffect>>()
         val controller = controller(repository, registeredRegistry(), applied)
@@ -103,7 +103,8 @@ class TransformAnimationPreviewWiringInstrumentedTest {
         repository.emit(listOf(transformItem(scope = EffectScope.CLIP)))
         delay(350L)
 
-        assertTrue(applied.isEmpty())
+        assertEquals(1, applied.size)
+        assertTrue(applied.single().single() is TransformAnimationGlEffect)
         controller.release()
     }
 

@@ -1,6 +1,7 @@
 package com.clipforge.ai.data.repository
 
 import android.util.Log
+import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectScope
 import com.clipforge.ai.data.local.dao.EffectItemDao
 import com.clipforge.ai.data.local.entity.EffectItemEntity
@@ -23,7 +24,7 @@ class EffectRepositoryImpl(
         effectItemDao.observeForProject(projectId).map { entities -> entities.toDomainList(projectId) }
 
     override suspend fun upsertEffect(effect: EffectItem) {
-        require(effect.scope == EffectScope.GLOBAL) { "Only GLOBAL effect scope is writable in C2" }
+        require(effect.isWritableScope()) { "Only GLOBAL effects and CLIP transform_animation are writable" }
         effectItemDao.upsert(effect.toEntity())
     }
 
@@ -44,7 +45,7 @@ private fun List<EffectItemEntity>.toDomainList(projectId: String): List<EffectI
     }
 
 fun EffectItem.toEntity(): EffectItemEntity {
-    require(scope == EffectScope.GLOBAL) { "Only GLOBAL effect scope is writable in C2" }
+    require(isWritableScope()) { "Only GLOBAL effects and CLIP transform_animation are writable" }
     return EffectItemEntity(
         id = id,
         projectId = projectId,
@@ -60,7 +61,9 @@ fun EffectItem.toEntity(): EffectItemEntity {
 fun EffectItemEntity.toDomain(): EffectItem {
     val parsedScope = runCatching { EffectScope.valueOf(scope) }
         .getOrElse { throw IllegalArgumentException("Unknown effect scope '$scope'", it) }
-    require(parsedScope == EffectScope.GLOBAL) { "CLIP effect scope is reserved in C2" }
+    require(parsedScope == EffectScope.GLOBAL || (parsedScope == EffectScope.CLIP && effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION)) {
+        "Only GLOBAL effects and CLIP transform_animation are readable"
+    }
     return EffectItem(
         id = id,
         projectId = projectId,
@@ -72,3 +75,6 @@ fun EffectItemEntity.toDomain(): EffectItem {
         params = EffectParamsCodec.decode(paramsJson)
     )
 }
+
+private fun EffectItem.isWritableScope(): Boolean =
+    scope == EffectScope.GLOBAL || (scope == EffectScope.CLIP && effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION)

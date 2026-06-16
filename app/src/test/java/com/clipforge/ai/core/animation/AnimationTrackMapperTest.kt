@@ -76,17 +76,18 @@ class AnimationTrackMapperTest {
     }
 
     @Test
-    fun `factory rejects non global scope`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            AnimationEffectItemFactory.createTransformAnimationEffectItem(
-                id = "anim-1",
-                projectId = "project",
-                track = sampleTrack(),
-                startMs = 0L,
-                endMs = 1_000L,
-                scope = EffectScope.CLIP
-            )
-        }
+    fun `factory creates clip transform animation effect item`() {
+        val item = AnimationEffectItemFactory.createTransformAnimationEffectItem(
+            id = AnimationEffectId.of("clip-1", AnimationRole.IN),
+            projectId = "project",
+            track = sampleTrack(),
+            startMs = 0L,
+            endMs = 1_000L,
+            scope = EffectScope.CLIP
+        )
+
+        assertEquals("transform_animation", item.effectId)
+        assertEquals(EffectScope.CLIP, item.scope)
     }
 
     @Test

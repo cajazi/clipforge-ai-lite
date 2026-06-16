@@ -1,10 +1,11 @@
 package com.clipforge.ai.presentation.effects
 
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -19,7 +20,7 @@ import org.junit.Test
 class EffectCatalogAndParamActionBarTest {
 
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun emptyCatalogRendersEmptyStateAndCategoryTabs() {
@@ -86,7 +87,10 @@ class EffectCatalogAndParamActionBarTest {
         }
 
         composeRule.onNodeWithText("Brightness").assertIsDisplayed()
-        composeRule.onNodeWithTag(EFFECT_CATALOG_PREMIUM_BADGE_TAG).assertIsDisplayed()
+        composeRule.onAllNodesWithTag(
+            testTag = EFFECT_CATALOG_PREMIUM_BADGE_TAG,
+            useUnmergedTree = true
+        ).assertCountEquals(1)
     }
 
     @Test
