@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,9 +33,9 @@ import androidx.compose.ui.unit.sp
 import com.clipforge.ai.core.designsystem.AppColors
 
 const val ANIMATION_PICKER_SHEET_TAG = "animation_picker_sheet"
+const val ANIMATION_PICKER_TAB_TAG = "animation_picker_tab"
 const val ANIMATION_PICKER_CATEGORY_TAG = "animation_picker_category"
 const val ANIMATION_PICKER_PRESET_TAG = "animation_picker_preset"
-const val ANIMATION_PICKER_REMOVE_TAG = "animation_picker_remove"
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -39,12 +43,19 @@ fun AnimationPickerSheet(
     visible: Boolean,
     state: AnimationPickerState,
     totalDurationMs: Long,
+    selectedPresetId: String?,
     onDismiss: () -> Unit,
     onApplyPreset: (String) -> Unit,
-    onRemove: () -> Unit,
+    onClearAnimation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (!visible) return
+
+    var selectedTab by rememberSaveable { mutableStateOf(AnimationPickerTab.IN) }
+    var selectedCategory by rememberSaveable { mutableStateOf(AnimationPickerCategory.BASIC) }
+    val selectedCategoryState = state.categories.first { it.category == selectedCategory }
+    val presets = animationPickerPresetsFor(selectedTab, selectedCategory)
+    val pickerEnabled = totalDurationMs > 0L
 
     Column(
         modifier = modifier
@@ -66,51 +77,123 @@ fun AnimationPickerSheet(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (state.hasAnimation) {
-                    Text(
-                        text = "Remove",
-                        color = Color(0xFFFF8A80),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clickable(onClick = onRemove)
-                            .testTag(ANIMATION_PICKER_REMOVE_TAG)
-                    )
-                }
-                Text(
-                    text = "Close",
-                    color = AppColors.TextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable(onClick = onDismiss)
+            Text(
+                text = "Close",
+                color = AppColors.TextSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable(onClick = onDismiss)
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.tabs.forEach { tabState ->
+                AnimationFilterChip(
+                    label = tabState.tab.title,
+                    helperLabel = null,
+                    selected = selectedTab == tabState.tab,
+                    enabled = true,
+                    onClick = { selectedTab = tabState.tab },
+                    modifier = Modifier.testTag(ANIMATION_PICKER_TAB_TAG)
                 )
             }
         }
 
-        state.categories.forEach { category ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = category.category.title,
-                    color = AppColors.TextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            state.categories.forEach { categoryState ->
+                AnimationFilterChip(
+                    label = categoryState.category.title,
+                    helperLabel = categoryState.helperLabel,
+                    selected = selectedCategory == categoryState.category,
+                    enabled = categoryState.enabled,
+                    onClick = { selectedCategory = categoryState.category },
                     modifier = Modifier.testTag(ANIMATION_PICKER_CATEGORY_TAG)
                 )
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    category.presets.forEach { preset ->
-                        AnimationPresetTile(
-                            preset = preset,
-                            enabled = totalDurationMs > 0L,
-                            onClick = { onApplyPreset(preset.presetId) }
-                        )
+            }
+        }
+
+        if (!selectedCategoryState.enabled) {
+            Text(
+                text = "Coming soon",
+                color = AppColors.TextMuted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                presets.forEach { preset ->
+                    val selected = if (preset.isNone) {
+                        selectedPresetId == null && !state.hasAnimation
+                    } else {
+                        preset.presetId == selectedPresetId
                     }
+                    AnimationPresetTile(
+                        preset = preset,
+                        enabled = pickerEnabled || preset.isNone,
+                        selected = selected,
+                        onClick = {
+                            val presetId = preset.presetId
+                            if (presetId == null) {
+                                onClearAnimation()
+                            } else {
+                                onApplyPreset(presetId)
+                            }
+                        }
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AnimationFilterChip(
+    label: String,
+    helperLabel: String?,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val borderColor = when {
+        selected -> Color.White
+        enabled -> Color(0xFF3A3A46)
+        else -> Color(0xFF2C2C36)
+    }
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) Color(0xFF2B2B36) else Color(0xFF20202A))
+            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) Color.White else AppColors.TextMuted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        helperLabel?.let {
+            Text(
+                text = it,
+                color = AppColors.TextMuted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -120,11 +203,16 @@ fun AnimationPickerSheet(
 private fun AnimationPresetTile(
     preset: AnimationPresetTileState,
     enabled: Boolean,
+    selected: Boolean,
     onClick: () -> Unit
 ) {
     Text(
         text = preset.label,
-        color = if (enabled) Color.White else AppColors.TextMuted,
+        color = when {
+            selected -> Color.Black
+            enabled -> Color.White
+            else -> AppColors.TextMuted
+        },
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
@@ -132,8 +220,8 @@ private fun AnimationPresetTile(
         modifier = Modifier
             .widthIn(min = 104.dp, max = 148.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF20202A))
-            .border(1.dp, Color(0xFF3A3A46), RoundedCornerShape(6.dp))
+            .background(if (selected) Color.White else Color(0xFF20202A))
+            .border(1.dp, if (selected) Color.White else Color(0xFF3A3A46), RoundedCornerShape(6.dp))
             .combinedClickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp)
             .testTag(ANIMATION_PICKER_PRESET_TAG)

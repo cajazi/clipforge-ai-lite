@@ -177,6 +177,8 @@ fun TimelineScreen(
     var showTextSheet by remember { mutableStateOf(false) }
     var showEffectCatalogSheet by rememberSaveable { mutableStateOf(false) }
     var showAnimationPickerSheet by rememberSaveable { mutableStateOf(false) }
+    var selectedAnimationPresetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var animationPreviewRestartKey by remember { mutableLongStateOf(0L) }
     var selectedEffectCatalogCategory by rememberSaveable { mutableStateOf(EffectCategory.TRENDY) }
     var screenRecompositionCount by remember { mutableIntStateOf(0) }
     var previewVolumeClipId by remember { mutableStateOf<String?>(null) }
@@ -383,6 +385,7 @@ fun TimelineScreen(
                     visible = true,
                     state = animationPickerState,
                     totalDurationMs = uiState.totalDurationMs,
+                    selectedPresetId = selectedAnimationPresetId,
                     onDismiss = { showAnimationPickerSheet = false },
                     onApplyPreset = { presetId ->
                         screenScope.launch {
@@ -390,14 +393,20 @@ fun TimelineScreen(
                                 Toast.makeText(context, "Add media first", Toast.LENGTH_SHORT).show()
                             } else {
                                 animationPickerViewModel.applyPreset(presetId, uiState.totalDurationMs)
-                                showAnimationPickerSheet = false
+                                selectedAnimationPresetId = presetId
+                                viewModel.seekTo(0L)
+                                animationPreviewRestartKey++
+                                viewModel.play()
                             }
                         }
                     },
-                    onRemove = {
+                    onClearAnimation = {
                         screenScope.launch {
                             animationPickerViewModel.removeAnimation()
-                            showAnimationPickerSheet = false
+                            selectedAnimationPresetId = null
+                            viewModel.seekTo(0L)
+                            animationPreviewRestartKey++
+                            viewModel.play()
                         }
                     }
                 )
@@ -479,6 +488,7 @@ fun TimelineScreen(
                     previewVolumeClipId = previewVolumeClipId,
                     previewVolumeMultiplier = previewVolumeMultiplier,
                     lastAddedClipId = uiState.lastAddedClipId,
+                    animationPreviewRestartKey = animationPreviewRestartKey,
                     onTogglePlay = { viewModel.togglePlayback() },
                     onEffectPreviewController = { effectPreviewControllerRef.value = it }
                 )
@@ -1065,6 +1075,7 @@ private fun CapCutPreviewArea(
     previewVolumeClipId: String?,
     previewVolumeMultiplier: Float,
     lastAddedClipId: String?,
+    animationPreviewRestartKey: Long,
     onTogglePlay: () -> Unit,
     onEffectPreviewController: (EffectPreviewController?) -> Unit
 ) {
@@ -1236,6 +1247,7 @@ private fun CapCutPreviewArea(
                                 previewClip.volume
                             },
                             lastAddedClipId = lastAddedClipId,
+                            animationPreviewRestartKey = animationPreviewRestartKey,
                             transitionAlpha = 1f,
                             onEffectPreviewController = onEffectPreviewController,
                             modifier = Modifier.fillMaxSize()
@@ -1628,6 +1640,7 @@ private fun VideoPreviewPlayer(
     onPreparedPlaylistResume: () -> Unit,
     volume: Float = 1f,
     lastAddedClipId: String? = null,
+    animationPreviewRestartKey: Long,
     transitionAlpha: Float = 1f,
     onEffectPreviewController: (EffectPreviewController?) -> Unit,
     modifier: Modifier = Modifier
@@ -2169,6 +2182,14 @@ private fun VideoPreviewPlayer(
         } else {
             player.pause()
         }
+    }
+
+    LaunchedEffect(animationPreviewRestartKey, preparedPlaylistSignature) {
+        if (animationPreviewRestartKey == 0L || preparedPlaylistSignature != playlistSignature) return@LaunchedEffect
+        lastSeekMs = Long.MIN_VALUE
+        lastSeekWindowIndex = -1
+        requestSeek(activeWindowIndex(), activeWindowOffsetMs(), "animationPresetRestart")
+        player.play()
     }
 
     DisposableEffect(isPlaying, preparedPlaylistSignature, visibleTimelineSignature) {
