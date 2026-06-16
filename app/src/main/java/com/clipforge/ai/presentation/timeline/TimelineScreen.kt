@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,9 +96,17 @@ import com.clipforge.ai.domain.model.TimelineSegment
 import com.clipforge.ai.domain.model.TransitionType
 import com.clipforge.ai.domain.selection.SelectionController
 import com.clipforge.ai.domain.selection.SelectionTarget
-import com.clipforge.ai.presentation.animation.AnimationPickerSheet
-import com.clipforge.ai.presentation.animation.AnimationPickerViewModel
+import com.clipforge.ai.presentation.animation.AnimationPickerCategory
+import com.clipforge.ai.presentation.animation.AnimationSummary
+import com.clipforge.ai.presentation.animation.CLIP_ANIMATION_MARKER_TAG
+import com.clipforge.ai.presentation.animation.ClipAnimationMarkerState
+import com.clipforge.ai.presentation.animation.ClipAnimationSheet
+import com.clipforge.ai.presentation.animation.ClipAnimationViewModel
+import com.clipforge.ai.presentation.animation.ClipAnimationWindowInput
+import com.clipforge.ai.presentation.animation.buildClipAnimationMarkerMap
+import com.clipforge.ai.presentation.animation.buildClipAnimationUiState
 import com.clipforge.ai.presentation.animation.buildAnimationPickerState
+import com.clipforge.ai.presentation.animation.maxDurationForRole
 import com.clipforge.ai.presentation.effects.EffectActionBar
 import com.clipforge.ai.presentation.effects.EffectCatalogSheet
 import com.clipforge.ai.presentation.effects.TimelineEffectLane
@@ -177,7 +186,7 @@ fun TimelineScreen(
     var showTextSheet by remember { mutableStateOf(false) }
     var showEffectCatalogSheet by rememberSaveable { mutableStateOf(false) }
     var showAnimationPickerSheet by rememberSaveable { mutableStateOf(false) }
-    var selectedAnimationPresetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedAnimationCategory by rememberSaveable { mutableStateOf(AnimationPickerCategory.BASIC) }
     var animationPreviewRestartKey by remember { mutableLongStateOf(0L) }
     var selectedEffectCatalogCategory by rememberSaveable { mutableStateOf(EffectCategory.TRENDY) }
     var screenRecompositionCount by remember { mutableIntStateOf(0) }
@@ -193,20 +202,71 @@ fun TimelineScreen(
     val timelineEffects by remember(projectId, effectRepository) {
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
-    val animationPickerViewModel = remember(projectId, effectRepository, historyRegistry) {
-        AnimationPickerViewModel(
+    val clipAnimationViewModel = remember(projectId, effectRepository, historyRegistry) {
+        ClipAnimationViewModel(
             projectId = projectId,
             repository = effectRepository,
             historyRegistry = historyRegistry
         )
     }
-    val animationPickerState = remember(timelineEffects) {
-        buildAnimationPickerState(
-            hasAnimation = timelineEffects.any {
-                it.projectId == projectId &&
-                    it.scope == EffectScope.GLOBAL &&
-                    it.effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION
+    val clipAnimationTransientState by clipAnimationViewModel.state.collectAsState()
+    val clipAnimationWindows = remember(uiState.clips) {
+        uiState.clips
+            .sortedBy { it.timelineStartMs }
+            .mapIndexed { index, clip ->
+                ClipAnimationWindowInput(
+                    clipId = clip.id,
+                    startMs = clip.timelineStartMs,
+                    endMs = clip.timelineEndMs,
+                    incomingTransitionDurationMs = uiState.clips
+                        .sortedBy { it.timelineStartMs }
+                        .getOrNull(index - 1)
+                        ?.transition
+                        ?.durationMs
+                        ?: 0L,
+                    outgoingTransitionDurationMs = clip.transition?.durationMs ?: 0L
+                )
             }
+    }
+    val selectedClipAnimationWindow = remember(uiState.selectedClipId, clipAnimationWindows) {
+        clipAnimationWindows.firstOrNull { it.clipId == uiState.selectedClipId }
+    }
+    val clipAnimationState = remember(
+        uiState.selectedClipId,
+        clipAnimationTransientState,
+        timelineEffects,
+        clipAnimationWindows
+    ) {
+        buildClipAnimationUiState(
+            selectedClipId = uiState.selectedClipId,
+            selectedRole = clipAnimationTransientState.selectedRole,
+            effects = timelineEffects,
+            clipWindows = clipAnimationWindows,
+            sessionSelectedPresetId = clipAnimationTransientState.sessionSelectedPresetId,
+            inFlightDurationMs = clipAnimationTransientState.inFlightDurationMs
+        )
+    }
+    val clipAnimationMaxDurationMs = remember(
+        clipAnimationState.selectedRole,
+        uiState.selectedClipId,
+        timelineEffects,
+        selectedClipAnimationWindow
+    ) {
+        maxDurationForRole(
+            role = clipAnimationState.selectedRole,
+            selectedClipId = uiState.selectedClipId,
+            effects = timelineEffects,
+            clipWindow = selectedClipAnimationWindow
+        )
+    }
+    val clipAnimationMarkers = remember(timelineEffects) {
+        buildClipAnimationMarkerMap(timelineEffects)
+    }
+    val animationPickerState = remember(clipAnimationState) {
+        buildAnimationPickerState(
+            hasAnimation = clipAnimationState.inAnimation != null ||
+                clipAnimationState.outAnimation != null ||
+                clipAnimationState.comboAnimation != null
         )
     }
     val effectCatalogState = remember {
@@ -381,20 +441,51 @@ fun TimelineScreen(
                     onClearSelection = { selectionController.clear() }
                 )
             } else if (showAnimationPickerSheet) {
-                AnimationPickerSheet(
+                ClipAnimationSheet(
                     visible = true,
                     state = animationPickerState,
-                    totalDurationMs = uiState.totalDurationMs,
-                    selectedPresetId = selectedAnimationPresetId,
-                    onDismiss = { showAnimationPickerSheet = false },
+                    clipAnimationState = clipAnimationState,
+                    selectedCategory = selectedAnimationCategory,
+                    maxDurationMs = clipAnimationMaxDurationMs,
+                    onDismiss = {
+                        showAnimationPickerSheet = false
+                        clipAnimationViewModel.closePanel()
+                    },
+                    onRoleSelected = clipAnimationViewModel::selectRole,
+                    onCategorySelected = { selectedAnimationCategory = it },
+                    onDurationDragging = clipAnimationViewModel::setInFlightDuration,
+                    onDurationCommitted = {
+                        screenScope.launch {
+                            val clipId = uiState.selectedClipId
+                            val window = selectedClipAnimationWindow
+                            if (clipId != null && window != null) {
+                                clipAnimationViewModel.commitDuration(
+                                    clipId = clipId,
+                                    role = clipAnimationState.selectedRole,
+                                    durationMs = clipAnimationState.requestedDurationMs,
+                                    clipWindow = window
+                                )
+                                viewModel.seekTo(window.startMs)
+                                animationPreviewRestartKey++
+                                viewModel.play()
+                            }
+                        }
+                    },
                     onApplyPreset = { presetId ->
                         screenScope.launch {
-                            if (uiState.totalDurationMs <= 0L) {
-                                Toast.makeText(context, "Add media first", Toast.LENGTH_SHORT).show()
+                            val clipId = uiState.selectedClipId
+                            val window = selectedClipAnimationWindow
+                            if (clipId == null || window == null) {
+                                Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
                             } else {
-                                animationPickerViewModel.applyPreset(presetId, uiState.totalDurationMs)
-                                selectedAnimationPresetId = presetId
-                                viewModel.seekTo(0L)
+                                clipAnimationViewModel.applyPreset(
+                                    clipId = clipId,
+                                    presetId = presetId,
+                                    role = clipAnimationState.selectedRole,
+                                    durationMs = clipAnimationState.requestedDurationMs,
+                                    clipWindow = window
+                                )
+                                viewModel.seekTo(window.startMs)
                                 animationPreviewRestartKey++
                                 viewModel.play()
                             }
@@ -402,11 +493,14 @@ fun TimelineScreen(
                     },
                     onClearAnimation = {
                         screenScope.launch {
-                            animationPickerViewModel.removeAnimation()
-                            selectedAnimationPresetId = null
-                            viewModel.seekTo(0L)
-                            animationPreviewRestartKey++
-                            viewModel.play()
+                            val clipId = uiState.selectedClipId
+                            val window = selectedClipAnimationWindow
+                            if (clipId != null) {
+                                clipAnimationViewModel.removeAnimation(clipId, clipAnimationState.selectedRole)
+                                viewModel.seekTo(window?.startMs ?: 0L)
+                                animationPreviewRestartKey++
+                                viewModel.play()
+                            }
                         }
                     }
                 )
@@ -444,6 +538,7 @@ fun TimelineScreen(
                             showEffectCatalogSheet = true
                         } else if (action == EditToolAction.Animations) {
                             showAnimationPickerSheet = true
+                            clipAnimationViewModel.openPanel()
                         } else if (action == EditToolAction.Volume && uiState.selectedClipId == null) {
                             Toast.makeText(context, "Select a clip first", Toast.LENGTH_SHORT).show()
                         } else {
@@ -505,6 +600,7 @@ fun TimelineScreen(
                     isPlaying = uiState.isPlaying,
                     selectedClipId = visibleSelectedClipId,
                     effects = timelineEffects,
+                    animationMarkers = clipAnimationMarkers,
                     selectionTarget = selectionTarget,
                     interactionMode = uiState.interactionMode,
                     splitAdjustClipAId = uiState.splitAdjustClipAId,
@@ -2409,6 +2505,7 @@ private fun CapCutTimelineEditor(
     isPlaying: Boolean,
     selectedClipId: String?,
     effects: List<EffectItem>,
+    animationMarkers: Map<String, ClipAnimationMarkerState>,
     selectionTarget: SelectionTarget,
     interactionMode: EditorInteractionMode,
     splitAdjustClipAId: String?,
@@ -2720,6 +2817,7 @@ private fun CapCutTimelineEditor(
                                             showTransitionMarker = nextClip != null && (hasTransition || clip.id == selectedClipId || isSplitBoundary),
                                             hasTransition = hasTransition,
                                             transitionIcon = clip.transition?.type?.let(::capCutTransitionIcon),
+                                            animationMarkers = animationMarkers[clip.id],
                                             isSplitBoundaryMarker = isSplitBoundary,
                                             boundarySelected = boundarySelected,
                                             // AUTO-TRIM: show trim handles whenever a clip is selected, like CapCut.
@@ -2988,6 +3086,7 @@ private fun CapCutThumbnailClip(
     showTransitionMarker: Boolean,
     hasTransition: Boolean,
     transitionIcon: String?,
+    animationMarkers: ClipAnimationMarkerState?,
     isSplitBoundaryMarker: Boolean,
     boundarySelected: Boolean,
     trimMode: Boolean,
@@ -3072,6 +3171,13 @@ private fun CapCutThumbnailClip(
             isPlaying = isPlaying,
             modifier = Modifier.fillMaxSize()
         )
+        animationMarkers?.let { markers ->
+            ClipAnimationMarkers(
+                clip = clip,
+                markers = markers,
+                pxPerMs = pxPerMs
+            )
+        }
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -3172,6 +3278,73 @@ private fun CapCutThumbnailClip(
             }
         }
     }
+}
+
+@Composable
+private fun BoxScope.ClipAnimationMarkers(
+    clip: ClipUiModel,
+    markers: ClipAnimationMarkerState,
+    pxPerMs: Float
+) {
+    val density = LocalDensity.current
+    markers.comboMarker?.let { summary ->
+        TimelineAnimationMarker(
+            clip = clip,
+            summary = summary,
+            pxPerMs = pxPerMs,
+            density = density,
+            color = AppColors.Primary.copy(alpha = 0.82f),
+            yAlignment = Alignment.BottomStart,
+            height = 3.dp
+        )
+    }
+    markers.inMarker?.let { summary ->
+        TimelineAnimationMarker(
+            clip = clip,
+            summary = summary,
+            pxPerMs = pxPerMs,
+            density = density,
+            color = Color(0xFF7AF0B0).copy(alpha = 0.88f),
+            yAlignment = Alignment.TopStart,
+            height = 4.dp
+        )
+    }
+    markers.outMarker?.let { summary ->
+        TimelineAnimationMarker(
+            clip = clip,
+            summary = summary,
+            pxPerMs = pxPerMs,
+            density = density,
+            color = Color(0xFFFFD166).copy(alpha = 0.88f),
+            yAlignment = Alignment.TopStart,
+            height = 4.dp
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.TimelineAnimationMarker(
+    clip: ClipUiModel,
+    summary: AnimationSummary,
+    pxPerMs: Float,
+    density: androidx.compose.ui.unit.Density,
+    color: Color,
+    yAlignment: Alignment,
+    height: Dp
+) {
+    val startOffsetMs = (summary.windowStartMs - clip.timelineStartMs).coerceAtLeast(0L)
+    val widthPx = (summary.effectiveDurationMs * pxPerMs).coerceAtLeast(1f)
+    val offsetPx = startOffsetMs * pxPerMs
+    Box(
+        modifier = Modifier
+            .align(yAlignment)
+            .offset(x = with(density) { offsetPx.toDp() })
+            .width(with(density) { widthPx.toDp() })
+            .height(height)
+            .clip(RoundedCornerShape(2.dp))
+            .background(color)
+            .testTag(CLIP_ANIMATION_MARKER_TAG)
+    )
 }
 
 @Composable

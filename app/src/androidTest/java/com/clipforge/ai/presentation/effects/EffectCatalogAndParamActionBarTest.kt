@@ -13,7 +13,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import com.clipforge.ai.core.effects.EffectCategory
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -149,12 +148,18 @@ class EffectCatalogAndParamActionBarTest {
 
         composeRule.onNodeWithTag(EFFECT_PARAM_SLIDER_TAG)
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
-                assertTrue(setProgress(0.75f))
+                setProgress(0.75f)
             }
 
-        assertEquals(0.5f, state.sliders.single().value, 0f)
-        assertEquals("amount", callbackValues.single().first)
-        assertEquals(0.75f, callbackValues.single().second, 0.0001f)
+        // Assert on an idle, synchronized frame while the Compose rule/activity is still
+        // alive. Asserting the action's return value inside the semantics lambda (or reading
+        // the callback list straight off the test thread) raced with rule teardown when the
+        // full suite ran, surfacing "Activity has been destroyed already".
+        composeRule.runOnIdle {
+            assertEquals(0.5f, state.sliders.single().value, 0f)
+            assertEquals("amount", callbackValues.single().first)
+            assertEquals(0.75f, callbackValues.single().second, 0.0001f)
+        }
     }
 
     private fun visibleActionBarState() = EffectActionBarState(
