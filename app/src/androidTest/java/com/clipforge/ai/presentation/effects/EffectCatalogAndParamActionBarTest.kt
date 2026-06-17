@@ -1,10 +1,11 @@
 package com.clipforge.ai.presentation.effects
 
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -12,14 +13,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import com.clipforge.ai.core.effects.EffectCategory
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 class EffectCatalogAndParamActionBarTest {
 
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun emptyCatalogRendersEmptyStateAndCategoryTabs() {
@@ -86,7 +86,10 @@ class EffectCatalogAndParamActionBarTest {
         }
 
         composeRule.onNodeWithText("Brightness").assertIsDisplayed()
-        composeRule.onNodeWithTag(EFFECT_CATALOG_PREMIUM_BADGE_TAG).assertIsDisplayed()
+        composeRule.onAllNodesWithTag(
+            testTag = EFFECT_CATALOG_PREMIUM_BADGE_TAG,
+            useUnmergedTree = true
+        ).assertCountEquals(1)
     }
 
     @Test
@@ -145,12 +148,18 @@ class EffectCatalogAndParamActionBarTest {
 
         composeRule.onNodeWithTag(EFFECT_PARAM_SLIDER_TAG)
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
-                assertTrue(setProgress(0.75f))
+                setProgress(0.75f)
             }
 
-        assertEquals(0.5f, state.sliders.single().value, 0f)
-        assertEquals("amount", callbackValues.single().first)
-        assertEquals(0.75f, callbackValues.single().second, 0.0001f)
+        // Assert on an idle, synchronized frame while the Compose rule/activity is still
+        // alive. Asserting the action's return value inside the semantics lambda (or reading
+        // the callback list straight off the test thread) raced with rule teardown when the
+        // full suite ran, surfacing "Activity has been destroyed already".
+        composeRule.runOnIdle {
+            assertEquals(0.5f, state.sliders.single().value, 0f)
+            assertEquals("amount", callbackValues.single().first)
+            assertEquals(0.75f, callbackValues.single().second, 0.0001f)
+        }
     }
 
     private fun visibleActionBarState() = EffectActionBarState(

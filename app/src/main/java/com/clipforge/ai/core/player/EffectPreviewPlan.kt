@@ -3,6 +3,7 @@
 package com.clipforge.ai.core.player
 
 import androidx.media3.effect.GlEffect
+import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectParamResolver
 import com.clipforge.ai.core.effects.EffectRegistry
 import com.clipforge.ai.core.effects.EffectScope
@@ -50,7 +51,7 @@ object EffectPreviewPlan {
     ): Result {
         val sorted = effects
             .filter { item ->
-                if (item.scope == EffectScope.GLOBAL) {
+                if (item.scope == EffectScope.GLOBAL || item.isClipTransformAnimation()) {
                     true
                 } else {
                     logger("EFFECT_PREVIEW_SKIP_SCOPE id=${item.id} scope=${item.scope}")
@@ -105,4 +106,7 @@ object EffectPreviewPlan {
 
         return Result(attachments)
     }
+
+    private fun EffectItem.isClipTransformAnimation(): Boolean =
+        scope == EffectScope.CLIP && effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION
 }

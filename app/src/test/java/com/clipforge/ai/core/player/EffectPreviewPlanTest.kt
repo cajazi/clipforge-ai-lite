@@ -5,6 +5,9 @@ package com.clipforge.ai.core.player
 import android.content.Context
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
+import com.clipforge.ai.core.animation.AnimationEffectId
+import com.clipforge.ai.core.animation.AnimationRole
+import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.ConstantParams
 import com.clipforge.ai.core.effects.EffectCategory
 import com.clipforge.ai.core.effects.EffectDescriptor
@@ -167,12 +170,45 @@ class EffectPreviewPlanTest {
         assertTrue(provider is ConstantParams)
     }
 
-    private fun registry(): EffectRegistry {
+    @Test
+    fun `clip transform animations are included`() {
+        val registry = registry(AnimationEffectRegistrations.TRANSFORM_ANIMATION)
+
+        val result = EffectPreviewPlan.build(
+            effects = listOf(
+                item(
+                    id = AnimationEffectId.of("clip-1", AnimationRole.IN),
+                    effectId = AnimationEffectRegistrations.TRANSFORM_ANIMATION,
+                    scope = EffectScope.CLIP
+                )
+            ),
+            registry = registry
+        )
+
+        assertEquals(listOf(AnimationEffectId.of("clip-1", AnimationRole.IN)), result.structuralKeys.map { it.id })
+    }
+
+    @Test
+    fun `non-transform clip effects are still skipped`() {
+        val logs = mutableListOf<String>()
+        val registry = registry()
+
+        val result = EffectPreviewPlan.build(
+            effects = listOf(item(scope = EffectScope.CLIP)),
+            registry = registry,
+            logger = logs::add
+        )
+
+        assertTrue(result.attachments.isEmpty())
+        assertTrue(logs.any { it.contains("EFFECT_PREVIEW_SKIP_SCOPE") })
+    }
+
+    private fun registry(id: String = "effect"): EffectRegistry {
         val registry = EffectRegistry()
         registry.register(
             EffectRegistration(
                 descriptor = EffectDescriptor(
-                    id = "effect",
+                    id = id,
                     displayName = "Effect",
                     category = EffectCategory.TRENDY,
                     paramSpecs = listOf(
@@ -192,12 +228,13 @@ class EffectPreviewPlanTest {
         startMs: Long = 0L,
         endMs: Long = 1_000L,
         zOrder: Int = 0,
+        scope: EffectScope = EffectScope.GLOBAL,
         params: Map<String, EffectParamValue> = emptyMap()
     ) = EffectItem(
         id = id,
         projectId = "project",
         effectId = effectId,
-        scope = EffectScope.GLOBAL,
+        scope = scope,
         startMs = startMs,
         endMs = endMs,
         zOrder = zOrder,

@@ -101,13 +101,20 @@ class TransitionParityTest {
     }
 
     @Test
-    fun push_right_still_plan_resolves_on_device() = kotlinx.coroutines.runBlocking {
-        // Regression: BOUNCE additions must not affect PUSH_RIGHT plan/dispatch.
-        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val results = com.clipforge.ai.core.transition.OverlayRendererParityHarness
-            .validate(ctx, "52126eba-d65d-412e-b425-ba198e6efe1b")
-        assertTrue("expected >=1 PUSH transition op", results.isNotEmpty())
-        results.forEach { r -> assertTrue("PUSH regression op[${r.index}]=${r.family} failed", r.pass) }
+    fun push_right_adapter_emits_on_real_media() {
+        TransitionRegistrations.registerBuiltIns()
+        val renderer = TransitionRegistry.get(TransitionRegistrations.PUSH_RIGHT)!!.renderer!!
+        val cleanups = ArrayList<() -> Unit>()
+        try {
+            val items = renderer.emit(ctxFor(seedPath(), mapOf("direction" to "PUSH_RIGHT"))) { cleanups.add(it) }
+            assertEquals("PUSH_RIGHT should emit 1 item", 1, items.size)
+            val clip = items[0].mediaItem.clippingConfiguration
+            assertEquals(aTailStartMs, clip.startPositionMs)
+            assertEquals(aEndMs, clip.endPositionMs)
+            assertTrue("PUSH_RIGHT must register cache cleanup (cache built on device)", cleanups.isNotEmpty())
+        } finally {
+            cleanups.forEach { runCatching { it() } }
+        }
     }
 
     @Test

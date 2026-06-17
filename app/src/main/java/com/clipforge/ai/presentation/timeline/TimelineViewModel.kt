@@ -9,10 +9,16 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.clipforge.ai.ClipForgeApp
+import com.clipforge.ai.core.animation.AnimationEffectId
+import com.clipforge.ai.core.animation.ClipAnimationRewriter
+import com.clipforge.ai.core.effects.AnimationEffectRegistrations
+import com.clipforge.ai.core.effects.EffectScope
 import com.clipforge.ai.data.local.entity.MediaAssetEntity
 import com.clipforge.ai.data.local.entity.TimelineItemEntity
 import com.clipforge.ai.data.repository.TransitionRepositoryImpl
 import com.clipforge.ai.domain.history.ClipSnapshotCommand
+import com.clipforge.ai.domain.history.TimelineEffectSnapshotCommand
+import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.MediaType
 import com.clipforge.ai.domain.model.Transition
 import com.clipforge.ai.domain.model.TransitionType
@@ -139,6 +145,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val app  = application as ClipForgeApp
     private val dao  = app.database.timelineDao()
     private val historyRegistry = app.historyRegistry
+    private val effectRepository = app.effectRepository
 
     private val transitionRepo by lazy {
         TransitionRepositoryImpl(dao, app.authManager.sessionManager)
@@ -587,6 +594,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         Log.d(TAG, "trimDragEnded clip=$clipId")
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val item = before.find { it.id == clipId } ?: return@launch
             dao.upsertTimelineItem(
                 item.copy(
@@ -596,7 +604,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 )
             )
             normalizePrimaryTimeline(pid)
-            recordHistory(pid, "Trim", before, dao.getTimelineForProjectOnce(pid), selectedBefore, clipId)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Trim",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                clipId
+            )
             Log.d(TAG, "timelineCommitted clip=$clipId")
             Log.d(TAG, "trim finished clip=$clipId start=${clip.sourceStartMs} end=${clip.sourceEndMs} duration=${clip.durationMs}")
         }
@@ -750,6 +768,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val selectedBefore = _uiState.value.selectedClipId
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val item = before.find { it.id == clipId } ?: return@launch
             val cleanDuration = if (type == TransitionType.NONE) 0L else normalizeTransitionDurationForSave(durationMs)
             val cleanType = if (type == TransitionType.NONE) null else type.name
@@ -765,7 +784,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     "rawDurationMs=$durationMs transitionDurationMs=$cleanDuration"
             )
             val after = dao.getTimelineForProjectOnce(pid)
-            recordHistory(pid, "Transition", before, after, selectedBefore, clipId)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(pid, "Transition", before, after, beforeEffects, afterEffects, selectedBefore, clipId)
             val orderedClips = _uiState.value.clips.sortedBy { it.timelineStartMs }
             val boundaryIndex = orderedClips.indexOfFirst { it.id == clipId }
             val boundaryClip = orderedClips.getOrNull(boundaryIndex)
@@ -821,6 +841,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val selectedBefore = _uiState.value.selectedClipId
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val primary = before.filter { isPrimaryVisual(assets[it.mediaAssetId]?.mediaType) }.sortedBy { it.orderIndex }
             val transitionClipIds = primary.dropLast(1).map { it.id }.toSet()
@@ -843,7 +864,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     "rawDurationMs=$durationMs transitionDurationMs=$cleanDuration count=${transitionClipIds.size}"
             )
             val after = dao.getTimelineForProjectOnce(pid)
-            recordHistory(pid, "Transition All", before, after, selectedBefore, selectedBefore)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(pid, "Transition All", before, after, beforeEffects, afterEffects, selectedBefore, selectedBefore)
             _uiState.update {
                 val transition = if (type == TransitionType.NONE) null else Transition(type, cleanDuration, type.isPremium)
                 val transitionClipIdsSet = transitionClipIds
@@ -884,6 +906,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         )
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val primary = before
                 .filter { isPrimaryVisual(assets[it.mediaAssetId]?.mediaType) }
@@ -994,7 +1017,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
                 )
             }
-            recordHistory(pid, "Split", before, dao.getTimelineForProjectOnce(pid), selectedBefore, second.id)
+            val afterEffects = deleteClipAnimationsAndReResolve(pid, clip.id, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Split",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                second.id
+            )
             val sourceFrameAfterMs = right.trimStartMs
             Log.d(
                 TAG,
@@ -1276,6 +1309,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val itemA = before.find { it.id == clipAId } ?: return@launch
             val itemB = before.find { it.id == clipBId } ?: return@launch
             dao.upsertAll(
@@ -1294,7 +1328,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 )
             )
             normalizePrimaryTimeline(pid)
-            recordHistory(pid, "Boundary Trim", before, dao.getTimelineForProjectOnce(pid), selectedBefore, clipBId)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Boundary Trim",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                clipBId
+            )
             Log.d(
                 TAG,
                 "BOUNDARY_TRIM_COMMIT side=${side ?: s.trimSessionSide} leftClipId=$clipAId rightClipId=$clipBId " +
@@ -1361,6 +1405,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     "timelineChangeReason=deleteSelectedClip"
             )
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val beforePrimary = before
                 .filter { isPrimaryVisual(assets[it.mediaAssetId]?.mediaType) }
@@ -1405,7 +1450,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     previewSplitBoundaryMs = null
                 )
             }
-            recordHistory(pid, "Delete", before, after, selectedBefore, nextSelectionId)
+            val afterEffects = deleteClipAnimationsAndReResolve(pid, id, beforeEffects)
+            recordHistoryWithEffects(pid, "Delete", before, after, beforeEffects, afterEffects, selectedBefore, nextSelectionId)
             val playableAfterDelete = remainingClips.count {
                 it.thumbnailUri != null &&
                     (it.mediaType == MediaType.VIDEO || it.mediaType == MediaType.OVERLAY_VIDEO)
@@ -1433,6 +1479,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             dao.deleteItemById(id)
             normalizePrimaryTimeline(pid)
+            deleteClipAnimationsAndReResolve(pid, id)
         }
     }
 
@@ -1441,6 +1488,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val pid  = currentProjectId ?: return@launch
             val selectedBefore = _uiState.value.selectedClipId
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val primary = before
                 .filter { isPrimaryVisual(assets[it.mediaAssetId]?.mediaType) }
@@ -1454,7 +1502,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             dao.upsertAll(layoutPrimaryTimeline(reordered))
             normalizePrimaryTimeline(pid)
             _uiState.update { it.copy(selectedClipId = copyId) }
-            recordHistory(pid, "Duplicate", before, dao.getTimelineForProjectOnce(pid), selectedBefore, copyId)
+            val afterEffects = duplicateClipAnimationsAndReResolve(pid, id, copyId, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Duplicate",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                copyId
+            )
         }
     }
 
@@ -1467,6 +1525,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val pid = currentProjectId ?: return
         val id = selectedClipId() ?: return
         viewModelScope.launch {
+            val selectedBefore = _uiState.value.selectedClipId
+            val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val item = dao.getTimelineForProjectOnce(pid).find { it.id == id } ?: return@launch
             val oldDuration = (item.endMs - item.startMs).coerceAtLeast(1L)
             val asset = buildAssetFromUri(pid, uri, MediaType.VIDEO) ?: return@launch
@@ -1482,6 +1543,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 )
             )
             normalizePrimaryTimeline(pid)
+            val after = dao.getTimelineForProjectOnce(pid)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(pid, "Replace", before, after, beforeEffects, afterEffects, selectedBefore, id)
             Log.d(TAG, "replace clip=$id media=${asset.id} duration=$effectiveDuration")
         }
     }
@@ -1492,6 +1556,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val selectedBefore = _uiState.value.selectedClipId
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val item = before.find { it.id == id } ?: return@launch
             val multiplier = speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
             val sourceStart = item.trimStartMs.coerceAtLeast(0L)
@@ -1508,7 +1573,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             normalizePrimaryTimeline(pid)
             val after = dao.getTimelineForProjectOnce(pid)
             _uiState.update { it.copy(selectedClipId = id, resumePlaybackAfterPlaylistPrepared = it.isPlaying, isPlaying = false) }
-            recordHistory(pid, "Speed", before, after, selectedBefore, id)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(pid, "Speed", before, after, beforeEffects, afterEffects, selectedBefore, id)
             Log.d(
                 TAG,
                 "speed clip=$id speed=$multiplier sourceSpanMs=$sourceSpan duration=$newDuration " +
@@ -1666,6 +1732,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val selectedBefore = _uiState.value.selectedClipId
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val items = before.toMutableList()
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val primary = items
@@ -1678,7 +1745,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             primary.add((targetIndex + 1).coerceAtMost(primary.size), moving)
             val updated = layoutPrimaryTimeline(primary)
             dao.upsertAll(updated)
-            recordHistory(pid, "Reorder", before, dao.getTimelineForProjectOnce(pid), selectedBefore, selectedId)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Reorder",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                selectedId
+            )
             Log.d(TAG, "reorder selected=$selectedId after=$targetClipId")
         }
     }
@@ -1689,6 +1766,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val selectedBefore = _uiState.value.selectedClipId
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val items = before
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val primary = items
@@ -1704,7 +1782,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val updated = layoutPrimaryTimeline(primary)
             dao.upsertAll(updated)
             _uiState.update { it.copy(selectedClipId = clipId) }
-            recordHistory(pid, "Move", before, dao.getTimelineForProjectOnce(pid), selectedBefore, clipId)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Move",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                clipId
+            )
             Log.d(TAG, "move clip=$clipId from=$from to=$to")
         }
     }
@@ -1714,6 +1802,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val selectedBefore = _uiState.value.selectedClipId
         viewModelScope.launch {
             val before = dao.getTimelineForProjectOnce(pid)
+            val beforeEffects = effectRepository.getEffectsForProject(pid)
             val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(pid).associateBy { it.id }
             val primary = before
                 .filter { isPrimaryVisual(assets[it.mediaAssetId]?.mediaType) }
@@ -1727,7 +1816,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             primary.add(to, moving)
             dao.upsertAll(layoutPrimaryTimeline(primary))
             _uiState.update { it.copy(selectedClipId = clipId) }
-            recordHistory(pid, "Reorder", before, dao.getTimelineForProjectOnce(pid), selectedBefore, clipId)
+            val afterEffects = reResolveClipAnimations(pid, beforeEffects)
+            recordHistoryWithEffects(
+                pid,
+                "Reorder",
+                before,
+                dao.getTimelineForProjectOnce(pid),
+                beforeEffects,
+                afterEffects,
+                selectedBefore,
+                clipId
+            )
             Log.d(TAG, "reorder drop clip=$clipId from=$from to=$to")
         }
     }
@@ -1940,6 +2039,32 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
+    private fun recordHistoryWithEffects(
+        projectId: String,
+        label: String,
+        before: List<TimelineItemEntity>,
+        after: List<TimelineItemEntity>,
+        beforeEffects: List<EffectItem>,
+        afterEffects: List<EffectItem>,
+        selectedBefore: String?,
+        selectedAfter: String?
+    ) {
+        if (before == after && beforeEffects == afterEffects) return
+        historyRegistry.record(
+            TimelineEffectSnapshotCommand(
+                label = label,
+                beforeTimeline = before,
+                afterTimeline = after,
+                beforeEffects = beforeEffects,
+                afterEffects = afterEffects,
+                selectedBefore = selectedBefore.toSelectionTarget(),
+                selectedAfter = selectedAfter.toSelectionTarget()
+            ) { items, effects, selection ->
+                restoreTimelineAndEffectSnapshot(projectId, items, effects, selection.clipId)
+            }
+        )
+    }
+
     private suspend fun restoreTimelineSnapshot(
         projectId: String,
         items: List<TimelineItemEntity>,
@@ -1956,6 +2081,123 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             )
         }
     }
+
+    private suspend fun restoreTimelineAndEffectSnapshot(
+        projectId: String,
+        items: List<TimelineItemEntity>,
+        effects: List<EffectItem>,
+        selectedClipId: String?
+    ) {
+        dao.deleteAllForProject(projectId)
+        if (items.isNotEmpty()) dao.upsertAll(items)
+        effectRepository.deleteEffectsForProject(projectId)
+        effects.forEach { effectRepository.upsertEffect(it) }
+        _uiState.update {
+            it.copy(
+                selectedClipId = selectedClipId,
+                isPlaying = false,
+                resumePlaybackAfterPlaylistPrepared = false,
+                preserveTimelineScrollVersion = it.preserveTimelineScrollVersion + 1L
+            )
+        }
+    }
+
+    private suspend fun reResolveClipAnimations(projectId: String): List<EffectItem> =
+        reResolveClipAnimations(projectId, effectRepository.getEffectsForProject(projectId))
+
+    private suspend fun reResolveClipAnimations(
+        projectId: String,
+        effects: List<EffectItem>
+    ): List<EffectItem> {
+        val rewritten = ClipAnimationRewriter.resolveWindows(
+            effects = effects,
+            windows = clipAnimationWindows(projectId)
+        )
+        replaceClipAnimationRows(projectId, rewritten)
+        return effectRepository.getEffectsForProject(projectId)
+    }
+
+    private suspend fun deleteClipAnimationsAndReResolve(
+        projectId: String,
+        clipId: String
+    ): List<EffectItem> =
+        deleteClipAnimationsAndReResolve(projectId, clipId, effectRepository.getEffectsForProject(projectId))
+
+    private suspend fun deleteClipAnimationsAndReResolve(
+        projectId: String,
+        clipId: String,
+        effects: List<EffectItem>
+    ): List<EffectItem> =
+        reResolveClipAnimations(projectId, ClipAnimationRewriter.deleteClipAnimations(effects, clipId))
+
+    private suspend fun duplicateClipAnimationsAndReResolve(
+        projectId: String,
+        sourceClipId: String,
+        newClipId: String
+    ): List<EffectItem> =
+        duplicateClipAnimationsAndReResolve(
+            projectId,
+            sourceClipId,
+            newClipId,
+            effectRepository.getEffectsForProject(projectId)
+        )
+
+    private suspend fun duplicateClipAnimationsAndReResolve(
+        projectId: String,
+        sourceClipId: String,
+        newClipId: String,
+        effects: List<EffectItem>
+    ): List<EffectItem> {
+        val rewritten = ClipAnimationRewriter.duplicateClipAnimations(
+            effects = effects,
+            sourceClipId = sourceClipId,
+            newClipId = newClipId,
+            windows = clipAnimationWindows(projectId)
+        )
+        replaceClipAnimationRows(projectId, rewritten)
+        return effectRepository.getEffectsForProject(projectId)
+    }
+
+    private suspend fun replaceClipAnimationRows(projectId: String, nextEffects: List<EffectItem>) {
+        val currentClipAnimations = effectRepository.getEffectsForProject(projectId)
+            .filter { it.isClipTransformAnimationRow() }
+        val nextClipAnimations = nextEffects.filter { it.isClipTransformAnimationRow() }
+        val nextIds = nextClipAnimations.map { it.id }.toSet()
+        currentClipAnimations
+            .filterNot { it.id in nextIds }
+            .forEach { effectRepository.deleteEffect(it.id) }
+        nextClipAnimations.forEach { effectRepository.upsertEffect(it) }
+    }
+
+    private suspend fun clipAnimationWindows(projectId: String): List<ClipAnimationRewriter.ClipWindow> {
+        val items = dao.getTimelineForProjectOnce(projectId)
+        val assets = app.database.mediaAssetDao().getAssetsForProjectOnce(projectId).associateBy { it.id }
+        val primary = items
+            .filter { isPrimaryVisual(assets[it.mediaAssetId]?.mediaType) }
+            .sortedBy { it.orderIndex }
+        return primary.mapIndexed { index, item ->
+            val incomingTransitionDurationMs = primary
+                .getOrNull(index - 1)
+                ?.transitionDurationMs
+                ?.let(::normalizeSavedTransitionDurationMs)
+                ?: 0L
+            val outgoingTransitionDurationMs = item.transitionDurationMs
+                ?.let(::normalizeSavedTransitionDurationMs)
+                ?: 0L
+            ClipAnimationRewriter.ClipWindow(
+                clipId = item.id,
+                startMs = item.startMs,
+                endMs = item.endMs,
+                incomingTransitionDurationMs = incomingTransitionDurationMs,
+                outgoingTransitionDurationMs = outgoingTransitionDurationMs
+            )
+        }
+    }
+
+    private fun EffectItem.isClipTransformAnimationRow(): Boolean =
+        AnimationEffectId.parse(id) != null &&
+            scope == EffectScope.CLIP &&
+            effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION
 
     private fun updateHistoryAvailability() {
         val history = historyRegistry.state.value

@@ -472,7 +472,7 @@ class EffectExportAttachTest {
 
     private companion object {
         const val TAG = "C4_EFFECT_EXPORT"
-        const val TEST_TINT_ID = "test.windowed_red_tint"
+        const val TEST_TINT_ID = "transform_animation"
         const val EXPORT_TIMEOUT_MS = 240_000L
         const val POLL_MS = 500L
         const val MIN_SEED_DURATION_MS = 2_500L

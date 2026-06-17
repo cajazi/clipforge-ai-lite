@@ -5,6 +5,8 @@ package com.clipforge.ai.core.effects
 import android.content.Context
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
+import com.clipforge.ai.core.animation.AnimationEffectId
+import com.clipforge.ai.core.animation.AnimationRole
 import com.clipforge.ai.core.overlay.TimePiece
 import com.clipforge.ai.core.overlay.TimelineToCompositionTimeMap
 import com.clipforge.ai.domain.model.EffectItem
@@ -243,7 +245,7 @@ class EffectExportStageTest {
     }
 
     @Test
-    fun `scope filtering is unchanged before release filtering`() {
+    fun `non-transform clip effects are skipped before release filtering`() {
         val logs = mutableListOf<String>()
         val registry = registryWith("tint")
         val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
@@ -259,6 +261,51 @@ class EffectExportStageTest {
         assertTrue(result.attachments.isEmpty())
         assertTrue(logs.any { it.contains("EFFECT_EXPORT_SKIP_SCOPE") })
         assertTrue(logs.none { it.contains("reason=not_export_ready") })
+    }
+
+    @Test
+    fun `clip transform animations map through composition time`() {
+        val registry = registryWith(AnimationEffectRegistrations.TRANSFORM_ANIMATION)
+        val map = TimelineToCompositionTimeMap.build(
+            listOf(
+                TimePiece(2_000L, 2_000L),
+                TimePiece(1_000L, 500L),
+                TimePiece(2_000L, 2_000L)
+            )
+        )
+
+        val attachment = EffectExportStage.build(
+            effects = listOf(
+                item(
+                    id = AnimationEffectId.of("clip-1", AnimationRole.IN),
+                    effectId = AnimationEffectRegistrations.TRANSFORM_ANIMATION,
+                    scope = EffectScope.CLIP,
+                    startMs = 2_500L,
+                    endMs = 3_000L
+                )
+            ),
+            registry = registry,
+            map = map,
+            releasePolicy = readyPolicy(AnimationEffectRegistrations.TRANSFORM_ANIMATION)
+        ).attachments.single()
+
+        assertEquals(2_250_000L, attachment.windowStartUs)
+        assertEquals(2_500_000L, attachment.windowEndUs)
+    }
+
+    @Test
+    fun `global animations still work`() {
+        val registry = registryWith(AnimationEffectRegistrations.TRANSFORM_ANIMATION)
+        val map = TimelineToCompositionTimeMap.build(listOf(TimePiece(1_000L, 1_000L)))
+
+        val result = EffectExportStage.build(
+            effects = listOf(item(effectId = AnimationEffectRegistrations.TRANSFORM_ANIMATION)),
+            registry = registry,
+            map = map,
+            releasePolicy = readyPolicy(AnimationEffectRegistrations.TRANSFORM_ANIMATION)
+        )
+
+        assertEquals(listOf(AnimationEffectRegistrations.TRANSFORM_ANIMATION), result.attachments.map { it.effectId })
     }
 
     @Test

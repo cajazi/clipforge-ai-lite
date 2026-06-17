@@ -36,7 +36,7 @@ object EffectExportStage {
         val attachments = effects
             .sortedWith(compareBy<EffectItem> { it.zOrder }.thenBy { it.startMs }.thenBy { it.id })
             .mapNotNull { item ->
-                if (item.scope != EffectScope.GLOBAL) {
+                if (item.scope != EffectScope.GLOBAL && !item.isClipTransformAnimation()) {
                     logger("EFFECT_EXPORT_SKIP_SCOPE id=${item.id} scope=${item.scope}")
                     return@mapNotNull null
                 }
@@ -74,4 +74,7 @@ object EffectExportStage {
             }
         return Result(attachments)
     }
+
+    private fun EffectItem.isClipTransformAnimation(): Boolean =
+        scope == EffectScope.CLIP && effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION
 }
