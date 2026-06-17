@@ -97,6 +97,48 @@ class RemoveAnimationCommand(
         repository.getEffectsForProject(projectId).filter { it.isClipAnimationFor(clipId) }
 }
 
+class CommitClipAnimationDraftCommand(
+    private val repository: EffectRepository,
+    private val projectId: String,
+    private val clipId: String,
+    private val priorItems: List<EffectItem>,
+    private val draftItems: List<EffectItem>
+) : UndoableCommand {
+    override val label: String = "Animation"
+
+    override suspend fun execute() {
+        replaceWith(draftItems)
+    }
+
+    override suspend fun undo() {
+        replaceWith(priorItems)
+    }
+
+    private suspend fun replaceWith(items: List<EffectItem>) {
+        items.forEach(::validateEffect)
+        val nextIds = items.map { it.id }.toSet()
+        currentClipAnimations()
+            .filterNot { it.id in nextIds }
+            .forEach { repository.deleteEffect(it.id) }
+        items.forEach { repository.upsertEffect(it) }
+    }
+
+    private suspend fun currentClipAnimations(): List<EffectItem> =
+        repository.getEffectsForProject(projectId).filter { it.isClipAnimationFor(clipId) }
+
+    private fun validateEffect(effect: EffectItem) {
+        require(effect.projectId == projectId) { "Animation effect projectId must match command projectId" }
+        require(effect.scope == EffectScope.CLIP) { "Clip animation draft commit supports CLIP scope only" }
+        require(effect.effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION) {
+            "Clip animation draft commit can only persist transform_animation"
+        }
+        val parsed = AnimationEffectId.parse(effect.id)
+        require(parsed != null && parsed.clipId == clipId) {
+            "Clip animation draft commit effect id must belong to clipId=$clipId"
+        }
+    }
+}
+
 abstract class ReplaceClipAnimationCommand(
     private val repository: EffectRepository,
     private val projectId: String,

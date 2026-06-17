@@ -3,6 +3,7 @@
 package com.clipforge.ai.core.player
 
 import androidx.media3.effect.GlEffect
+import com.clipforge.ai.core.animation.AnimationEffectId
 import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectParamResolver
 import com.clipforge.ai.core.effects.EffectRegistry
@@ -107,6 +108,24 @@ object EffectPreviewPlan {
         return Result(attachments)
     }
 
+    /**
+     * Overrides [effects] for preview only: every persisted `anim-[clipId]-*` row for [clipId]
+     * is dropped and replaced with [draftItems]. GLOBAL effects and other clips' effects are
+     * unaffected. Pure - does not read or write the repository.
+     */
+    fun applyAnimationDraftOverride(
+        effects: List<EffectItem>,
+        clipId: String,
+        draftItems: List<EffectItem>
+    ): List<EffectItem> =
+        effects.filterNot { it.isClipAnimationFor(clipId) } + draftItems
+
     private fun EffectItem.isClipTransformAnimation(): Boolean =
         scope == EffectScope.CLIP && effectId == AnimationEffectRegistrations.TRANSFORM_ANIMATION
+
+    private fun EffectItem.isClipAnimationFor(clipId: String): Boolean {
+        if (!isClipTransformAnimation()) return false
+        val parsed = AnimationEffectId.parse(id) ?: return false
+        return parsed.clipId == clipId
+    }
 }
