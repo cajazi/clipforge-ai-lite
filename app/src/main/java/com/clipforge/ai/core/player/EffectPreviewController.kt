@@ -33,6 +33,8 @@ class EffectPreviewController(
     private var currentStructuralKeys: List<EffectPreviewPlan.StructuralKey> = emptyList()
     private var liveParamsByItemId: Map<String, LiveParams> = emptyMap()
     private val pendingLiveValues = linkedMapOf<String, MutableMap<String, Float>>()
+    private var animationDraftClipId: String? = null
+    private var animationDraftItems: List<EffectItem> = emptyList()
     private var suspendDepth = 0
     private var disabledReason: String? = null
     private var released = false
@@ -46,6 +48,8 @@ class EffectPreviewController(
         currentStructuralKeys = emptyList()
         liveParamsByItemId = emptyMap()
         pendingLiveValues.clear()
+        animationDraftClipId = null
+        animationDraftItems = emptyList()
         logger("EFFECT_PREVIEW CREATE projectId=$projectId")
 
         if (!PREVIEW_EFFECTS_ENABLED) {
@@ -71,6 +75,31 @@ class EffectPreviewController(
                 .onFailure { disable("setParam:${it.message}", it) }
             return
         }
+        applyNow(force = true)
+    }
+
+    /** Begins a preview-only override for [clipId]'s clip-scoped animation rows. No repository write. */
+    fun beginAnimationDraft(clipId: String) {
+        if (released) return
+        animationDraftClipId = clipId
+        animationDraftItems = emptyList()
+        logger("EFFECT_PREVIEW_DRAFT_BEGIN clipId=$clipId")
+        applyNow(force = true)
+    }
+
+    /** Replaces the live draft preview items for [clipId]. No-op if no draft is active for it. */
+    fun updateAnimationDraftItems(clipId: String, items: List<EffectItem>) {
+        if (released || animationDraftClipId != clipId) return
+        animationDraftItems = items
+        applyNow(force = true)
+    }
+
+    /** Ends the draft override and reverts preview to the persisted [latestEffects]. */
+    fun endAnimationDraft() {
+        if (released || animationDraftClipId == null) return
+        animationDraftClipId = null
+        animationDraftItems = emptyList()
+        logger("EFFECT_PREVIEW_DRAFT_END")
         applyNow(force = true)
     }
 
@@ -133,13 +162,17 @@ class EffectPreviewController(
         logger("EFFECT_PREVIEW APPLY count=${plan.effects.size} structuralCount=${plan.structuralKeys.size}")
     }
 
-    private fun buildPlan(): EffectPreviewPlan.Result =
-        EffectPreviewPlan.build(
-            effects = latestEffects,
+    private fun buildPlan(): EffectPreviewPlan.Result {
+        val effects = animationDraftClipId?.let { clipId ->
+            EffectPreviewPlan.applyAnimationDraftOverride(latestEffects, clipId, animationDraftItems)
+        } ?: latestEffects
+        return EffectPreviewPlan.build(
+            effects = effects,
             registry = registry,
             pendingLiveValues = pendingLiveValues,
             logger = logger
         )
+    }
 
     private fun setVideoEffects(effects: List<GlEffect>, reason: String) {
         if (disabledReason != null) return

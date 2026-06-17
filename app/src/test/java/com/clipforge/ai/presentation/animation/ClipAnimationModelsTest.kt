@@ -20,7 +20,6 @@ class ClipAnimationModelsTest {
             selectedRole = AnimationRole.IN,
             effects = listOf(animation("clip-1", AnimationRole.IN), animation("clip-2", AnimationRole.OUT)),
             clipWindows = listOf(window("clip-1"), window("clip-2")),
-            sessionSelectedPresetId = null,
             inFlightDurationMs = null
         )
 
@@ -40,7 +39,6 @@ class ClipAnimationModelsTest {
                 animation("clip-1", AnimationRole.COMBO, 0L, 1_000L, requestedMs = 1_500L)
             ),
             clipWindows = listOf(window("clip-1", endMs = 1_000L)),
-            sessionSelectedPresetId = "slow_zoom",
             inFlightDurationMs = null
         )
 
@@ -57,7 +55,6 @@ class ClipAnimationModelsTest {
             selectedRole = AnimationRole.IN,
             effects = listOf(animation("clip-1", AnimationRole.IN, 0L, 500L, requestedMs = 1_000L)),
             clipWindows = listOf(window("clip-1", endMs = 500L)),
-            sessionSelectedPresetId = null,
             inFlightDurationMs = null
         )
 
@@ -89,6 +86,104 @@ class ClipAnimationModelsTest {
         assertEquals(500L, before["clip-1"]?.inMarker?.effectiveDurationMs)
         assertEquals(800L, afterDuration["clip-1"]?.inMarker?.effectiveDurationMs)
         assertTrue(afterRemove.isEmpty())
+    }
+
+    @Test
+    fun `draft overrides persisted effects for the edited clip in ui state`() {
+        val persistedIn = animation("clip-1", AnimationRole.IN, 0L, 500L)
+        val draft = ClipAnimationDraft(
+            clipId = "clip-1",
+            inAnimation = DraftRole(
+                presetId = "zoom_in",
+                requestedDurationMs = 800L,
+                resolvedItem = animation("clip-1", AnimationRole.IN, 0L, 800L, requestedMs = 800L)
+            ),
+            outAnimation = null,
+            comboAnimation = null,
+            baselineItems = listOf(persistedIn)
+        )
+
+        val state = buildClipAnimationUiState(
+            selectedClipId = "clip-1",
+            selectedRole = AnimationRole.IN,
+            effects = listOf(persistedIn),
+            clipWindows = listOf(window("clip-1", endMs = 2_000L)),
+            inFlightDurationMs = null,
+            draft = draft
+        )
+
+        assertEquals(800L, state.inAnimation?.effectiveDurationMs)
+        assertEquals("zoom_in", state.sessionSelectedPresetId)
+    }
+
+    @Test
+    fun `draft overlays a marker for its clip and leaves other clips untouched`() {
+        val draft = ClipAnimationDraft(
+            clipId = "clip-1",
+            inAnimation = null,
+            outAnimation = DraftRole(
+                presetId = "fade_out",
+                requestedDurationMs = 400L,
+                resolvedItem = animation("clip-1", AnimationRole.OUT, 600L, 1_000L)
+            ),
+            comboAnimation = null,
+            baselineItems = listOf(animation("clip-1", AnimationRole.IN))
+        )
+
+        val markers = buildClipAnimationMarkerMap(
+            effects = listOf(
+                animation("clip-1", AnimationRole.IN),
+                animation("clip-2", AnimationRole.COMBO, 1_000L, 2_000L)
+            ),
+            draft = draft
+        )
+
+        assertNull(markers["clip-1"]?.inMarker)
+        assertEquals(400L, markers["clip-1"]?.outMarker?.effectiveDurationMs)
+        assertEquals(1_000L, markers["clip-2"]?.comboMarker?.effectiveDurationMs)
+    }
+
+    @Test
+    fun `draft with every role cleared removes the clip's marker entirely`() {
+        val draft = ClipAnimationDraft(
+            clipId = "clip-1",
+            inAnimation = null,
+            outAnimation = null,
+            comboAnimation = null,
+            baselineItems = listOf(animation("clip-1", AnimationRole.IN))
+        )
+
+        val markers = buildClipAnimationMarkerMap(
+            effects = listOf(animation("clip-1", AnimationRole.IN)),
+            draft = draft
+        )
+
+        assertTrue(markers.isEmpty())
+    }
+
+    @Test
+    fun `max duration for role substitutes drafted reservations`() {
+        val draft = ClipAnimationDraft(
+            clipId = "clip-1",
+            inAnimation = null,
+            outAnimation = DraftRole(
+                presetId = "fade_out",
+                requestedDurationMs = 600L,
+                resolvedItem = animation("clip-1", AnimationRole.OUT, 1_400L, 2_000L, requestedMs = 600L)
+            ),
+            comboAnimation = null,
+            baselineItems = emptyList()
+        )
+
+        val maxForIn = maxDurationForRole(
+            role = AnimationRole.IN,
+            selectedClipId = "clip-1",
+            effects = emptyList(),
+            clipWindow = window("clip-1", endMs = 2_000L),
+            draft = draft
+        )
+
+        assertEquals(1_400L, maxForIn)
     }
 
     private fun window(

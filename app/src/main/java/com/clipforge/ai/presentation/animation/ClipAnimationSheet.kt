@@ -15,6 +15,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +43,8 @@ const val CLIP_ANIMATION_SHEET_TAG = "clip_animation_sheet"
 const val CLIP_ANIMATION_ROLE_TAB_TAG = "clip_animation_role_tab"
 const val CLIP_ANIMATION_DURATION_SLIDER_TAG = "clip_animation_duration_slider"
 const val CLIP_ANIMATION_MARKER_TAG = "clip_animation_marker"
+const val CLIP_ANIMATION_CONFIRM_TAG = "clip_animation_confirm"
+const val CLIP_ANIMATION_DISCARD_TAG = "clip_animation_discard"
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -47,7 +54,8 @@ fun ClipAnimationSheet(
     clipAnimationState: ClipAnimationUiState,
     selectedCategory: AnimationPickerCategory,
     maxDurationMs: Long,
-    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit,
     onRoleSelected: (AnimationRole) -> Unit,
     onCategorySelected: (AnimationPickerCategory) -> Unit,
     onDurationDragging: (Long) -> Unit,
@@ -76,19 +84,18 @@ fun ClipAnimationSheet(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = onDiscard, modifier = Modifier.testTag(CLIP_ANIMATION_DISCARD_TAG)) {
+                Icon(Icons.Rounded.Close, contentDescription = "Discard", tint = Color.White)
+            }
             Text(
                 text = state.title,
                 color = Color.White,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
-            Text(
-                text = "Close",
-                color = AppColors.TextSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable(onClick = onDismiss)
-            )
+            IconButton(onClick = onConfirm, modifier = Modifier.testTag(CLIP_ANIMATION_CONFIRM_TAG)) {
+                Icon(Icons.Rounded.Check, contentDescription = "Confirm", tint = Color.White)
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

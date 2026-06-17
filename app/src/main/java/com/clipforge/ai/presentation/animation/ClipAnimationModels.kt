@@ -54,11 +54,13 @@ fun buildClipAnimationUiState(
     selectedRole: AnimationRole,
     effects: List<EffectItem>,
     clipWindows: List<ClipAnimationWindowInput>,
-    sessionSelectedPresetId: String?,
-    inFlightDurationMs: Long?
+    inFlightDurationMs: Long?,
+    draft: ClipAnimationDraft? = null
 ): ClipAnimationUiState {
+    val activeDraft = draft?.takeIf { it.clipId == selectedClipId }
+    val effectsForSelectedClip = activeDraft?.resolvedItems() ?: effects
     val summaries = selectedClipId
-        ?.let { clipId -> clipAnimationSummaries(effects, clipId) }
+        ?.let { clipId -> clipAnimationSummaries(effectsForSelectedClip, clipId) }
         .orEmpty()
     val roleSummary = summaries[selectedRole]
     val rolePresetType = selectedRole.toPresetType()
@@ -74,7 +76,7 @@ fun buildClipAnimationUiState(
                 role = selectedRole,
                 requestedDurationMs = requestedDurationMs,
                 selectedClipId = clipId,
-                effects = effects,
+                effects = effectsForSelectedClip,
                 clipWindow = window
             )
         }
@@ -89,26 +91,42 @@ fun buildClipAnimationUiState(
         availablePresets = presets,
         requestedDurationMs = requestedDurationMs,
         effectiveDurationMs = effectiveDurationMs,
-        sessionSelectedPresetId = sessionSelectedPresetId
+        sessionSelectedPresetId = activeDraft?.role(selectedRole)?.presetId
     )
 }
 
-fun buildClipAnimationMarkerMap(effects: List<EffectItem>): Map<String, ClipAnimationMarkerState> {
+fun buildClipAnimationMarkerMap(
+    effects: List<EffectItem>,
+    draft: ClipAnimationDraft? = null
+): Map<String, ClipAnimationMarkerState> {
     val grouped = effects
         .filter { it.isClipTransformAnimation() }
+        .filter { draft == null || AnimationEffectId.parse(it.id)?.clipId != draft.clipId }
         .mapNotNull { effect ->
             val parsed = AnimationEffectId.parse(effect.id) ?: return@mapNotNull null
             parsed.clipId to (parsed.role to effect.toAnimationSummary())
         }
         .groupBy({ it.first }, { it.second })
 
-    return grouped.mapValues { (_, values) ->
+    val markers = grouped.mapValues { (_, values) ->
         val byRole = values.toMap()
         ClipAnimationMarkerState(
             inMarker = byRole[AnimationRole.IN],
             outMarker = byRole[AnimationRole.OUT],
             comboMarker = byRole[AnimationRole.COMBO]
         )
+    }
+
+    if (draft == null) return markers
+    val draftMarker = ClipAnimationMarkerState(
+        inMarker = draft.inAnimation?.resolvedItem?.toAnimationSummary(),
+        outMarker = draft.outAnimation?.resolvedItem?.toAnimationSummary(),
+        comboMarker = draft.comboAnimation?.resolvedItem?.toAnimationSummary()
+    )
+    return if (draftMarker.inMarker == null && draftMarker.outMarker == null && draftMarker.comboMarker == null) {
+        markers - draft.clipId
+    } else {
+        markers + (draft.clipId to draftMarker)
     }
 }
 
@@ -138,11 +156,13 @@ fun maxDurationForRole(
     role: AnimationRole,
     selectedClipId: String?,
     effects: List<EffectItem>,
-    clipWindow: ClipAnimationWindowInput?
+    clipWindow: ClipAnimationWindowInput?,
+    draft: ClipAnimationDraft? = null
 ): Long {
     val cleanDuration = clipWindow?.cleanDurationMs ?: 0L
     if (cleanDuration <= 0L || selectedClipId == null) return MIN_CLIP_ANIMATION_DURATION_MS
-    val summaries = clipAnimationSummaries(effects, selectedClipId)
+    val activeDraft = draft?.takeIf { it.clipId == selectedClipId }
+    val summaries = clipAnimationSummaries(activeDraft?.resolvedItems() ?: effects, selectedClipId)
     val reserved = when (role) {
         AnimationRole.IN -> summaries[AnimationRole.OUT]?.effectiveDurationMs ?: 0L
         AnimationRole.OUT -> summaries[AnimationRole.IN]?.effectiveDurationMs ?: 0L
@@ -200,7 +220,7 @@ private fun EffectItem.toAnimationSummary(): AnimationSummary =
         windowEndMs = endMs
     )
 
-private fun EffectItem.requestedDurationMsFromParams(): Long =
+internal fun EffectItem.requestedDurationMsFromParams(): Long =
     params.values
         .asSequence()
         .mapNotNull { value -> (value as? EffectParamValue.Keyframed)?.frames?.maxOfOrNull { it.timeUs } }
