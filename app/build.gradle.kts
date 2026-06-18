@@ -110,3 +110,14 @@ dependencies {
 
 
 }
+
+// Surface full exception details (incl. NoSuchMethodError symbols) in test output.
+tasks.withType<Test> {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        events("failed")
+        showStackTraces = true
+        showExceptions = true
+        showCauses = true
+    }
+}
