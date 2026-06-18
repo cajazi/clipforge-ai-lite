@@ -54,7 +54,13 @@ class AnimationPickerModelsTest {
                 null,
                 AnimationPresetIds.FADE_IN,
                 AnimationPresetIds.ZOOM_IN,
-                AnimationPresetIds.SLIDE_IN_LEFT
+                AnimationPresetIds.SLIDE_IN_LEFT,
+                AnimationPresetIds.SLIDE_IN_RIGHT,
+                AnimationPresetIds.SLIDE_IN_UP,
+                AnimationPresetIds.SLIDE_IN_DOWN,
+                AnimationPresetIds.ROTATE_IN,
+                AnimationPresetIds.POP_IN,
+                AnimationPresetIds.BOUNCE_IN
             ),
             animationPickerPresetsFor(AnimationPickerTab.IN, AnimationPickerCategory.BASIC).map { it.presetId }
         )
@@ -63,12 +69,18 @@ class AnimationPickerModelsTest {
                 null,
                 AnimationPresetIds.FADE_OUT,
                 AnimationPresetIds.ZOOM_OUT,
-                AnimationPresetIds.SLIDE_OUT_RIGHT
+                AnimationPresetIds.SLIDE_OUT_RIGHT,
+                AnimationPresetIds.SLIDE_OUT_LEFT,
+                AnimationPresetIds.SLIDE_OUT_UP,
+                AnimationPresetIds.SLIDE_OUT_DOWN,
+                AnimationPresetIds.ROTATE_OUT,
+                AnimationPresetIds.POP_OUT,
+                AnimationPresetIds.BOUNCE_OUT
             ),
             animationPickerPresetsFor(AnimationPickerTab.OUT, AnimationPickerCategory.BASIC).map { it.presetId }
         )
         assertEquals(
-            listOf(null, AnimationPresetIds.SLOW_ZOOM),
+            listOf(null, AnimationPresetIds.SLOW_ZOOM, AnimationPresetIds.DRIFT_ZOOM),
             animationPickerPresetsFor(AnimationPickerTab.COMBO, AnimationPickerCategory.BASIC).map { it.presetId }
         )
     }
@@ -80,7 +92,17 @@ class AnimationPickerModelsTest {
             animationPickerPresetsFor(AnimationPickerTab.IN, AnimationPickerCategory.VIBRATION).map { it.presetId }
         )
         assertEquals(
-            listOf(null, AnimationPresetIds.PULSE, AnimationPresetIds.SWAY),
+            listOf(
+                null,
+                AnimationPresetIds.PULSE,
+                AnimationPresetIds.SWAY,
+                AnimationPresetIds.FLOAT,
+                AnimationPresetIds.BOB,
+                AnimationPresetIds.WOBBLE,
+                AnimationPresetIds.HEARTBEAT,
+                AnimationPresetIds.BREATHE,
+                AnimationPresetIds.SHAKE_LIGHT
+            ),
             animationPickerPresetsFor(AnimationPickerTab.COMBO, AnimationPickerCategory.VIBRATION).map { it.presetId }
         )
     }

@@ -26,12 +26,31 @@ class AnimationPersistenceRoundTripTest {
             AnimationPresetIds.FADE_IN,
             AnimationPresetIds.ZOOM_IN,
             AnimationPresetIds.SLIDE_IN_LEFT,
+            AnimationPresetIds.SLIDE_IN_RIGHT,
+            AnimationPresetIds.SLIDE_IN_UP,
+            AnimationPresetIds.SLIDE_IN_DOWN,
+            AnimationPresetIds.ROTATE_IN,
+            AnimationPresetIds.POP_IN,
+            AnimationPresetIds.BOUNCE_IN,
             AnimationPresetIds.FADE_OUT,
             AnimationPresetIds.ZOOM_OUT,
             AnimationPresetIds.SLIDE_OUT_RIGHT,
+            AnimationPresetIds.SLIDE_OUT_LEFT,
+            AnimationPresetIds.SLIDE_OUT_UP,
+            AnimationPresetIds.SLIDE_OUT_DOWN,
+            AnimationPresetIds.ROTATE_OUT,
+            AnimationPresetIds.POP_OUT,
+            AnimationPresetIds.BOUNCE_OUT,
             AnimationPresetIds.SLOW_ZOOM,
             AnimationPresetIds.PULSE,
-            AnimationPresetIds.SWAY
+            AnimationPresetIds.SWAY,
+            AnimationPresetIds.FLOAT,
+            AnimationPresetIds.BOB,
+            AnimationPresetIds.WOBBLE,
+            AnimationPresetIds.HEARTBEAT,
+            AnimationPresetIds.BREATHE,
+            AnimationPresetIds.SHAKE_LIGHT,
+            AnimationPresetIds.DRIFT_ZOOM
         )
 
         assertEquals(presetIds, AnimationPresets.all.map { it.id })
