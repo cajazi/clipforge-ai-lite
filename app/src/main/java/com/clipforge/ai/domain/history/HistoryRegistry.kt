@@ -96,7 +96,7 @@ class HistoryRegistry(
     private fun pushUndo(command: UndoableCommand) {
         undoStack.addLast(command)
         while (undoStack.size > maxEntries) {
-            undoStack.removeFirst()
+            undoStack.removeAt(0)
         }
     }
 

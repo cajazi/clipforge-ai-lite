@@ -213,7 +213,7 @@ class HistoryRegistryTest {
         }
 
         override suspend fun undo() {
-            target.removeLast()
+            target.removeAt(target.lastIndex)
         }
     }
 
