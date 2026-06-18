@@ -16,15 +16,15 @@ object AnimationEffectRegistrations {
             ParamSpec(
                 key = AnimationPropertyKeys.POSITION_X,
                 label = "Position X",
-                min = -1f,
-                max = 1f,
+                min = -2f,
+                max = 2f,
                 default = requireNotNull(AnimationPropertyKeys.defaultValue(AnimationPropertyKeys.POSITION_X))
             ),
             ParamSpec(
                 key = AnimationPropertyKeys.POSITION_Y,
                 label = "Position Y",
-                min = -1f,
-                max = 1f,
+                min = -2f,
+                max = 2f,
                 default = requireNotNull(AnimationPropertyKeys.defaultValue(AnimationPropertyKeys.POSITION_Y))
             ),
             ParamSpec(
