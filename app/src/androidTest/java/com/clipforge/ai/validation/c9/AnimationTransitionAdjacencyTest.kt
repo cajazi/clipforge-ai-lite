@@ -17,6 +17,7 @@ import com.clipforge.ai.core.effects.ExportEffectRegistry
 import com.clipforge.ai.core.effects.registerTransformAnimationEffect
 import com.clipforge.ai.data.local.entity.MediaAssetEntity
 import com.clipforge.ai.data.local.entity.ProjectEntity
+import com.clipforge.ai.RequiresGpuExport
 import com.clipforge.ai.data.local.entity.TimelineItemEntity
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.EffectParamValue
@@ -40,6 +41,7 @@ import kotlin.math.abs
  * animations present.
  */
 @RunWith(AndroidJUnit4::class)
+@RequiresGpuExport
 class AnimationTransitionAdjacencyTest {
 
     @Before

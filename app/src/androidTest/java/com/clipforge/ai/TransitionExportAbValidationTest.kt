@@ -30,6 +30,7 @@ import java.io.File
  */
 @UnstableApi
 @RunWith(AndroidJUnit4::class)
+@RequiresGpuExport
 class TransitionExportAbValidationTest {
 
     private data class Case(val label: String, val type: String, val durationMs: Long = 500L)

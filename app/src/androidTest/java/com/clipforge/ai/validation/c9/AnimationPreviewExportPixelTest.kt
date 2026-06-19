@@ -20,6 +20,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.clipforge.ai.ClipForgeApp
+import com.clipforge.ai.RequiresGpuExport
 import com.clipforge.ai.core.animation.AnimationPropertyKeys
 import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectScope
@@ -57,6 +58,7 @@ import java.util.concurrent.TimeUnit
  * independent rendering path at the GPU/shader level, not just the matrix math.
  */
 @RunWith(AndroidJUnit4::class)
+@RequiresGpuExport
 class AnimationPreviewExportPixelTest {
 
     @Before

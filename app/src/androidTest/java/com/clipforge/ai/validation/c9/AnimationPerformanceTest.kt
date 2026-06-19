@@ -17,6 +17,7 @@ import com.clipforge.ai.core.effects.Keyframe
 import com.clipforge.ai.core.effects.registerTransformAnimationEffect
 import com.clipforge.ai.core.animation.TransformMath
 import com.clipforge.ai.core.overlay.TimePiece
+import com.clipforge.ai.RequiresGpuExport
 import com.clipforge.ai.core.overlay.TimelineToCompositionTimeMap
 import com.clipforge.ai.core.player.EffectPreviewPlan
 import com.clipforge.ai.data.local.entity.MediaAssetEntity
@@ -51,6 +52,7 @@ import kotlin.math.abs
  * unmodified [com.clipforge.ai.core.export.ExportManager] pipeline.
  */
 @RunWith(AndroidJUnit4::class)
+@RequiresGpuExport
 class AnimationPerformanceTest {
 
     @Before
