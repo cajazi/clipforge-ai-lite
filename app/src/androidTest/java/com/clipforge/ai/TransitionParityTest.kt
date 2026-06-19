@@ -6,11 +6,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.clipforge.ai.core.transition.SegmentContext
 import com.clipforge.ai.core.transition.TransitionRegistrations
 import com.clipforge.ai.core.transition.TransitionRegistry
+import com.clipforge.ai.validation.c9.support.SeedMediaFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 
 /**
  * Phase C 6/6 closure — runtime validation of the DISSOLVE and FADE_WHITE adapter code paths.
@@ -50,16 +50,7 @@ class TransitionParityTest {
 
     private fun seedPath(): String {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val mediaDir = File(ctx.filesDir, "media")
-        val candidates = mediaDir
-            .listFiles { file -> file.isFile && file.extension.equals("mp4", ignoreCase = true) }
-            .orEmpty()
-            .sortedBy { it.name }
-        assertTrue(
-            "seed media missing: no *.mp4 files under ${mediaDir.absolutePath}",
-            candidates.isNotEmpty()
-        )
-        return candidates.first().absolutePath
+        return SeedMediaFactory.seedPath(ctx)
     }
 
     @Test
