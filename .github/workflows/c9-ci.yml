@@ -96,22 +96,43 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x gradlew
 
+      # - name: Run instrumented tests on emulator
+      #   uses: reactivecircus/android-emulator-runner@v2
+      #   with:
+      #     api-level: 30
+      #     target: default
+      #     arch: x86_64
+      #     profile: pixel_2
+      #     disable-animations: true
+      #     emulator-boot-timeout: 900
+      #     emulator-options: >
+      #       -no-window
+      #       -no-audio
+      #       -no-boot-anim
+      #       -gpu swiftshader_indirect
+      #       -no-snapshot
+      #       -camera-back none
+      #     script: ./gradlew connectedDebugAndroidTest --stacktrace --no-daemon
+
       - name: Run instrumented tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          target: default
+          api-level: 34
+          target: google_apis
           arch: x86_64
-          profile: pixel_2
+          profile: pixel_6
+
           disable-animations: true
           emulator-boot-timeout: 900
+
           emulator-options: >
             -no-window
             -no-audio
-            -no-boot-anim
             -gpu swiftshader_indirect
             -no-snapshot
+            -no-boot-anim
             -camera-back none
+
           script: ./gradlew connectedDebugAndroidTest --stacktrace --no-daemon
 
       - name: Upload Android test reports
