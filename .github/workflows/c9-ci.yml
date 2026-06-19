@@ -136,7 +136,18 @@ jobs:
           # Exclude GPU/hardware-codec export tests: the software emulator has no usable GPU or
           # hardware video codec, so real GL+MediaCodec/Transformer exports fail/crash there. These
           # tests are annotated @RequiresGpuExport and still run on real devices (see annotation doc).
-          script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresGpuExport --stacktrace --no-daemon
+          script: |
+            adb logcat -c
+            set +e
+            ./gradlew connectedDebugAndroidTest \
+              "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresGpuExport" \
+              --stacktrace \
+              --no-daemon
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              adb logcat -d > instrumentation-logcat.txt || true
+            fi
+            exit "$status"
 
       - name: Upload Android test reports
         if: always()
@@ -146,6 +157,7 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            instrumentation-logcat.txt
 
   c9-validation:
     name: C9 Validation Gates
