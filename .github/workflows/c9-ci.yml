@@ -96,24 +96,6 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x gradlew
 
-      # - name: Run instrumented tests on emulator
-      #   uses: reactivecircus/android-emulator-runner@v2
-      #   with:
-      #     api-level: 30
-      #     target: default
-      #     arch: x86_64
-      #     profile: pixel_2
-      #     disable-animations: true
-      #     emulator-boot-timeout: 900
-      #     emulator-options: >
-      #       -no-window
-      #       -no-audio
-      #       -no-boot-anim
-      #       -gpu swiftshader_indirect
-      #       -no-snapshot
-      #       -camera-back none
-      #     script: ./gradlew connectedDebugAndroidTest --stacktrace --no-daemon
-
       - name: Run instrumented tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -140,10 +122,7 @@ jobs:
           script: |
             adb logcat -c
             set +e
-            ./gradlew connectedDebugAndroidTest \
-              "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresGpuExport" \
-              --stacktrace \
-              --no-daemon
+            ./gradlew connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresGpuExport" --stacktrace --no-daemon
             status=$?
             if [ "$status" -ne 0 ]; then
               adb logcat -d > instrumentation-logcat.txt || true
