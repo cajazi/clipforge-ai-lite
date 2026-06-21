@@ -22,6 +22,7 @@ import com.clipforge.ai.data.repository.EffectRepositoryImpl
 import com.clipforge.ai.data.repository.MediaRepositoryImpl
 import com.clipforge.ai.data.repository.SupabaseProjectRepository
 import com.clipforge.ai.data.repository.SupabaseRenderRepository
+import com.clipforge.ai.data.repository.TextOverlayRepositoryImpl
 import com.clipforge.ai.domain.history.HistoryRegistry
 
 class ClipForgeApp : Application() {
@@ -35,6 +36,7 @@ class ClipForgeApp : Application() {
     val renderRepository     by lazy { SupabaseRenderRepository(supabaseRenderApi) }
     val mediaRepository      by lazy { MediaRepositoryImpl(database.mediaAssetDao(), mediaApi) }
     val effectRepository     by lazy { EffectRepositoryImpl(database.effectItemDao()) }
+    val textOverlayRepository by lazy { TextOverlayRepositoryImpl(database.textOverlayDao()) }
     val historyRegistry      by lazy { HistoryRegistry() }
     val userPreferencesManager by lazy { UserPreferencesManager(this) }
     val exportManager        by lazy { ExportManager(this, userPreferencesManager) }
