@@ -41,11 +41,11 @@ class EffectPersistenceMigrationTest {
     }
 
     @Test
-    fun migration_from_v3_to_v4_survives_and_creates_effect_table_and_index() {
+    fun migration_from_v3_to_current_survives_and_creates_effect_table_and_index() {
         createV3Database(context.getDatabasePath(dbName))
 
         val db = Room.databaseBuilder(context, ClipForgeDatabase::class.java, dbName)
-            .addMigrations(ClipForgeDatabase.MIGRATION_3_4)
+            .addMigrations(ClipForgeDatabase.MIGRATION_3_4, ClipForgeDatabase.MIGRATION_4_5)
             .build()
 
         try {
@@ -142,7 +142,7 @@ class EffectPersistenceMigrationTest {
 
     private fun freshDatabase(): ClipForgeDatabase =
         Room.databaseBuilder(context, ClipForgeDatabase::class.java, dbName)
-            .addMigrations(ClipForgeDatabase.MIGRATION_3_4)
+            .addMigrations(ClipForgeDatabase.MIGRATION_3_4, ClipForgeDatabase.MIGRATION_4_5)
             .build()
 
     private suspend fun insertProject(db: ClipForgeDatabase, id: String) {
