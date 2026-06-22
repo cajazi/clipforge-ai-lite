@@ -15,6 +15,7 @@ import com.clipforge.ai.core.supabase.SupabaseClient
 import com.clipforge.ai.core.supabase.SupabaseProjectApi
 import com.clipforge.ai.core.supabase.SupabaseRenderApi
 import com.clipforge.ai.core.supabase.SupabaseStorage
+import com.clipforge.ai.core.text.CanvasTextOverlayRasterizer
 import com.clipforge.ai.data.local.database.ClipForgeDatabase
 import com.clipforge.ai.data.remote.api.MediaApi
 import com.clipforge.ai.core.network.ApiClient
@@ -23,6 +24,7 @@ import com.clipforge.ai.data.repository.MediaRepositoryImpl
 import com.clipforge.ai.data.repository.SupabaseProjectRepository
 import com.clipforge.ai.data.repository.SupabaseRenderRepository
 import com.clipforge.ai.data.repository.TextOverlayRepositoryImpl
+import com.clipforge.ai.data.repository.TextOverlaySource
 import com.clipforge.ai.domain.history.HistoryRegistry
 
 class ClipForgeApp : Application() {
@@ -37,9 +39,10 @@ class ClipForgeApp : Application() {
     val mediaRepository      by lazy { MediaRepositoryImpl(database.mediaAssetDao(), mediaApi) }
     val effectRepository     by lazy { EffectRepositoryImpl(database.effectItemDao()) }
     val textOverlayRepository by lazy { TextOverlayRepositoryImpl(database.textOverlayDao()) }
+    val overlaySources       by lazy { listOf(TextOverlaySource(textOverlayRepository, CanvasTextOverlayRasterizer())) }
     val historyRegistry      by lazy { HistoryRegistry() }
     val userPreferencesManager by lazy { UserPreferencesManager(this) }
-    val exportManager        by lazy { ExportManager(this, userPreferencesManager) }
+    val exportManager        by lazy { ExportManager(this, userPreferencesManager) { overlaySources } }
     val networkMonitor       by lazy { NetworkMonitor(this) }
     val entitlementManager   by lazy { EntitlementManager() }
     val billingManager       by lazy { BillingManager(entitlementManager) }

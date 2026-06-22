@@ -133,6 +133,41 @@ class OverlayExportStageTest {
         assertEquals(2_500_000L, overlays.single().compositionWindowEndUs)
     }
 
+    @Test
+    fun `overlay spanning transition boundary maps through compressed transition window`() = runBlocking {
+        val map = TimelineToCompositionTimeMap.build(
+            listOf(
+                TimePiece(timelineMs = 2_000L, compositionMs = 2_000L),
+                TimePiece(timelineMs = 1_000L, compositionMs = 500L),
+                TimePiece(timelineMs = 2_000L, compositionMs = 2_000L)
+            )
+        )
+
+        val overlays = OverlayExportStage.buildOverlays(
+            projectId = PROJECT_ID,
+            sources = listOf(
+                FakeSource(
+                    listOf(
+                        renderable(
+                            id = "boundary-overlay",
+                            layer = OverlayLayer.USER,
+                            zIndex = 0,
+                            windowStartMs = 1_750L,
+                            windowEndMs = 3_250L
+                        )
+                    )
+                )
+            ),
+            timeMap = map,
+            frameW = 1080,
+            frameH = 1920
+        )
+
+        assertEquals(1_750_000L, overlays.single().compositionWindowStartUs)
+        assertEquals(2_750_000L, overlays.single().compositionWindowEndUs)
+        assertEquals(4_500L, map.compositionTotalMs)
+    }
+
     private class FakeSource(private val overlays: List<RenderableOverlay>) : OverlaySource {
         val loadedProjectIds = mutableListOf<String>()
 
