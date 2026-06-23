@@ -122,7 +122,8 @@ jobs:
           # produce stable zero/empty-effect output there. These tests are annotated @RequiresRealGpu
           # (a superset of @RequiresGpuExport) and still run on real devices (see annotation doc).
           script: |
-            adb logcat -c
+            adb wait-for-device
+            adb logcat -c || true
             set +e
             ./gradlew connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresRealGpu" --stacktrace --no-daemon
             status=$?
