@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.RequiresGpuExport
+import com.clipforge.ai.RequiresRealGpu
 import com.clipforge.ai.core.animation.AnimationPropertyKeys
 import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectScope
@@ -41,6 +42,7 @@ import kotlin.math.abs
  */
 @RunWith(AndroidJUnit4::class)
 @RequiresGpuExport
+@RequiresRealGpu
 class AnimationExportGoldenTest {
 
     @Before

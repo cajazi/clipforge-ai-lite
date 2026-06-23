@@ -35,6 +35,7 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 @RequiresGpuExport
+@RequiresRealGpu
 class TransformAnimationExportValidationTest {
 
     @Before

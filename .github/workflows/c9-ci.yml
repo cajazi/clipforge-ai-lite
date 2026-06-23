@@ -117,13 +117,14 @@ jobs:
             -camera-back none
             -camera-front none
 
-          # Exclude GPU/hardware-codec export tests: the software emulator has no usable GPU or
-          # hardware video codec, so real GL+MediaCodec/Transformer exports fail/crash there. These
-          # tests are annotated @RequiresGpuExport and still run on real devices (see annotation doc).
+          # Exclude real-GPU/device-only tests: the software emulator has no usable GPU or hardware
+          # video codec, so real GL+MediaCodec/Transformer exports fail/crash and preview-wiring tests
+          # produce stable zero/empty-effect output there. These tests are annotated @RequiresRealGpu
+          # (a superset of @RequiresGpuExport) and still run on real devices (see annotation doc).
           script: |
             adb logcat -c
             set +e
-            ./gradlew connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresGpuExport" --stacktrace --no-daemon
+            ./gradlew connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresRealGpu" --stacktrace --no-daemon
             status=$?
             if [ "$status" -ne 0 ]; then
               adb logcat -d > instrumentation-logcat.txt || true

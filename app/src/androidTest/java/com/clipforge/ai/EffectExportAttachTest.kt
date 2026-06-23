@@ -47,6 +47,7 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 @RequiresGpuExport
+@RequiresRealGpu
 class EffectExportAttachTest {
 
     @Before
