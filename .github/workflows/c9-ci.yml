@@ -172,18 +172,37 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
+      - name: Assert device-only performance test exists and stays GPU-gated
+        run: |
+          set -euo pipefail
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+          # AnimationPerformanceTest is an instrumented @RequiresGpuExport / @RequiresRealGpu test that
+          # drives preview timing proxies plus real Transformer/MediaCodec export. The JVM
+          # testDebugUnitTest task cannot see or execute it, and GitHub-hosted runners have no usable
+          # hardware GPU/codec device, so we do NOT run it here -- the real performance budget check
+          # runs on attached SM-A165F-class hardware. This gate instead statically guarantees the
+          # device-only test still exists, stays annotated, and keeps both budget cases, so it can
+          # never silently be deleted or downgraded into a JVM/emulator test without review.
+          TEST_FILE="app/src/androidTest/java/com/clipforge/ai/validation/c9/AnimationPerformanceTest.kt"
 
-      - name: Run performance baseline checks
-        run: ./gradlew testDebugUnitTest --tests "*AnimationPerformance*" --stacktrace --no-daemon
+          if [ ! -f "$TEST_FILE" ]; then
+            echo "::error::Device-only performance test is missing: $TEST_FILE"
+            exit 1
+          fi
+
+          require() {
+            if ! grep -Fq "$1" "$TEST_FILE"; then
+              echo "::error::$TEST_FILE must contain: $1"
+              exit 1
+            fi
+          }
+
+          require "@RequiresGpuExport"
+          require "@RequiresRealGpu"
+          require "preview_frame_resolution_cost_meets_budget_across_concurrency_levels"
+          require "export_duration_regression_and_memory_overhead_within_budget"
+
+          echo "OK: $TEST_FILE exists, is GPU-gated, and retains both performance budget cases"
 
   artifacts:
     name: Collect CI Evidence
