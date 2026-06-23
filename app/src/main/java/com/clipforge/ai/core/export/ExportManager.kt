@@ -11,6 +11,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import com.clipforge.ai.core.gl.CrossfadeExecutor
 import com.clipforge.ai.core.gl.ProjectExporter
+import com.clipforge.ai.core.overlay.OverlaySource
 import com.clipforge.ai.core.storage.UserPreferencesManager
 import com.clipforge.ai.domain.model.RenderJobStatus
 import kotlinx.coroutines.CancellationException
@@ -45,7 +46,8 @@ data class ExportManagerState(
 @OptIn(UnstableApi::class)
 class ExportManager(
     private val application: Application,
-    private val prefsManager: UserPreferencesManager
+    private val prefsManager: UserPreferencesManager,
+    private val overlaySourcesProvider: () -> List<OverlaySource> = { emptyList() }
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(ExportManagerState())
@@ -112,6 +114,7 @@ class ExportManager(
                 CrossfadeExecutor.renderProjectTimeline(
                     context = application,
                     projectId = projectId,
+                    overlaySources = overlaySourcesProvider(),
                     onStage = { message ->
                         Log.d(TAG, "EXPORT_STAGE project=$projectId message=$message")
                         _state.value = _state.value.copy(

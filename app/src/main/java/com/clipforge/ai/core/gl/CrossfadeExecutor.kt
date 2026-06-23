@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.GlEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
@@ -24,6 +25,8 @@ import com.clipforge.ai.core.effects.EffectExportPolicy
 import com.clipforge.ai.core.effects.EffectExportStage
 import com.clipforge.ai.core.effects.ExportEffectRegistry
 import com.clipforge.ai.core.overlay.OpTimePieceAdapter
+import com.clipforge.ai.core.overlay.OverlayExportStage
+import com.clipforge.ai.core.overlay.OverlaySource
 import com.clipforge.ai.core.overlay.TimelineToCompositionTimeMap
 import com.clipforge.ai.core.transition.SegmentContext
 import com.clipforge.ai.core.transition.TransitionId
@@ -55,6 +58,7 @@ import java.io.File
 object CrossfadeExecutor {
 
     private const val TAG = "CROSSFADE_EXEC"
+    private const val TEXT_OV_TAG = "TEXT_OV"
     private val REAL_CROSSFADE_TYPES = setOf("DISSOLVE", "CROSS_DISSOLVE")
 
     /**
@@ -461,6 +465,7 @@ object CrossfadeExecutor {
     suspend fun renderProjectTimeline(
         context: Context,
         projectId: String,
+        overlaySources: List<OverlaySource> = emptyList(),
         onStage: (String) -> Unit = {},
         onProgress: (Int) -> Unit,
         onResult: (Result) -> Unit
@@ -1318,8 +1323,24 @@ object CrossfadeExecutor {
             )
             emptyList()
         }
-        val outputEffects = Effects(emptyList(), listOf(presentationEffect) + stageEffects)
-        Log.d(TAG, "OUTPUT_EFFECTS_CREATE_AFTER stageCount=${stageEffects.size} mapCompositionTotalMs=${timeMap.compositionTotalMs} runningTimeMs=$runningTimeMs")
+        val overlayBitmaps = OverlayExportStage.buildOverlays(
+            projectId = projectId,
+            sources = overlaySources,
+            timeMap = timeMap,
+            frameW = outW,
+            frameH = outH
+        )
+        overlayBitmaps.forEach { overlay ->
+            Log.d(
+                TEXT_OV_TAG,
+                "WINDOW id=${overlay.renderableId} mappedUs=${overlay.compositionWindowStartUs}..${overlay.compositionWindowEndUs}"
+            )
+        }
+        val overlayEffect = if (overlayBitmaps.isEmpty()) null else OverlayEffect(overlayBitmaps)
+        Log.d(TEXT_OV_TAG, "CREATE count=${overlayBitmaps.size} frame=${outW}x${outH} overlayEffect=${overlayEffect != null}")
+        val videoEffects = outputVideoEffects(presentationEffect, stageEffects, overlayEffect)
+        val outputEffects = Effects(emptyList(), videoEffects)
+        Log.d(TAG, "OUTPUT_EFFECTS_CREATE_AFTER stageCount=${stageEffects.size} overlayCount=${overlayBitmaps.size} mapCompositionTotalMs=${timeMap.compositionTotalMs} runningTimeMs=$runningTimeMs")
         Log.d(TAG, "COMPOSITION_CREATE_BEFORE sequenceCount=1 itemCount=${items.size}")
         val composition = Composition.Builder(listOf(sequence)).setEffects(outputEffects).build()
         Log.d(TAG, "COMPOSITION_CREATE_AFTER composition=$composition")
@@ -1329,6 +1350,7 @@ object CrossfadeExecutor {
         fun releaseCaches() {
             caches.forEach { try { it.release() } catch (_: Exception) {} }
             dispatchCleanups.forEach { runCatching { it() } }
+            Log.d(TEXT_OV_TAG, "RELEASE count=${overlayBitmaps.size}")
         }
 
         Log.d(TAG, "TRANSFORMER_CREATE_BEFORE")
@@ -1373,6 +1395,17 @@ object CrossfadeExecutor {
             }
         })
     }
+
+    internal fun outputVideoEffects(
+        presentationEffect: GlEffect,
+        stageEffects: List<GlEffect>,
+        overlayEffect: OverlayEffect?
+    ): List<GlEffect> =
+        if (overlayEffect != null) {
+            listOf(presentationEffect) + stageEffects + overlayEffect
+        } else {
+            listOf(presentationEffect) + stageEffects
+        }
 
     // ---- Kept from step 1/2: single-pair test entry (still used by some flows) ----
 
