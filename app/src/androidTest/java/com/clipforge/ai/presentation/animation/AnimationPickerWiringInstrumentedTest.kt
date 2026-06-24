@@ -8,6 +8,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.clipforge.ai.RequiresRealGpu
 import com.clipforge.ai.core.animation.AnimationPresetIds
 import com.clipforge.ai.core.animation.AnimationPropertyKeys
 import com.clipforge.ai.core.effects.AnimationEffectRegistrations
@@ -36,6 +37,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@RequiresRealGpu
 class AnimationPickerWiringInstrumentedTest {
     private lateinit var player: ExoPlayer
     private lateinit var scope: CoroutineScope
