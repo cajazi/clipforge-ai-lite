@@ -2,9 +2,9 @@ name: C9 Production Animation CI
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: c9-ci-${{ github.ref }}
@@ -97,17 +97,15 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x gradlew
 
-      - name: Run instrumented tests on emulator
+      - name: Run emulator-safe instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
-
           disable-animations: true
           emulator-boot-timeout: 900
-
           emulator-options: >
             -no-window
             -no-audio
@@ -116,21 +114,10 @@ jobs:
             -no-boot-anim
             -camera-back none
             -camera-front none
-
-          # Exclude real-GPU/device-only tests: the software emulator has no usable GPU or hardware
-          # video codec, so real GL+MediaCodec/Transformer exports fail/crash and preview-wiring tests
-          # produce stable zero/empty-effect output there. These tests are annotated @RequiresRealGpu
-          # (a superset of @RequiresGpuExport) and still run on real devices (see annotation doc).
           script: |
             adb wait-for-device
             adb logcat -c || true
-            set +e
             ./gradlew connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.clipforge.ai.RequiresRealGpu" --stacktrace --no-daemon
-            status=$?
-            if [ "$status" -ne 0 ]; then
-              adb logcat -d > instrumentation-logcat.txt || true
-            fi
-            exit "$status"
 
       - name: Upload Android test reports
         if: always()
@@ -141,6 +128,7 @@ jobs:
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
             instrumentation-logcat.txt
+          if-no-files-found: ignore
 
   c9-validation:
     name: C9 Validation Gates
@@ -173,17 +161,10 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Assert device-only performance test exists and stays GPU-gated
+      - name: Assert device-only performance test contract
         run: |
           set -euo pipefail
 
-          # AnimationPerformanceTest is an instrumented @RequiresGpuExport / @RequiresRealGpu test that
-          # drives preview timing proxies plus real Transformer/MediaCodec export. The JVM
-          # testDebugUnitTest task cannot see or execute it, and GitHub-hosted runners have no usable
-          # hardware GPU/codec device, so we do NOT run it here -- the real performance budget check
-          # runs on attached SM-A165F-class hardware. This gate instead statically guarantees the
-          # device-only test still exists, stays annotated, and keeps both budget cases, so it can
-          # never silently be deleted or downgraded into a JVM/emulator test without review.
           TEST_FILE="app/src/androidTest/java/com/clipforge/ai/validation/c9/AnimationPerformanceTest.kt"
 
           if [ ! -f "$TEST_FILE" ]; then
@@ -230,5 +211,3 @@ jobs:
             app/build/outputs/androidTest-results/
             artifacts/c9/
           if-no-files-found: ignore
-
-
