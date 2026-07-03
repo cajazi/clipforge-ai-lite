@@ -6,13 +6,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.clipforge.ai.core.utils.Constants
 import com.clipforge.ai.data.local.dao.*
 import com.clipforge.ai.data.local.entity.*
-@Database(entities = [ProjectEntity::class, MediaAssetEntity::class, TimelineItemEntity::class, EffectItemEntity::class],
+@Database(entities = [ProjectEntity::class, MediaAssetEntity::class, TimelineItemEntity::class, EffectItemEntity::class, TextOverlayEntity::class],
     version = Constants.DB_VERSION, exportSchema = true)
 abstract class ClipForgeDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
     abstract fun mediaAssetDao(): MediaAssetDao
     abstract fun timelineDao(): TimelineDao
     abstract fun effectItemDao(): EffectItemDao
+    abstract fun textOverlayDao(): TextOverlayDao
     companion object {
         @Volatile private var INSTANCE: ClipForgeDatabase? = null
         val MIGRATION_3_4 = object : Migration(3, 4) {
@@ -36,11 +37,45 @@ abstract class ClipForgeDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_effect_items_projectId` ON `effect_items` (`projectId`)")
             }
         }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `text_overlays` (
+                        `id` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `text` TEXT NOT NULL,
+                        `fontId` TEXT NOT NULL,
+                        `fontSizeNorm` REAL NOT NULL,
+                        `colorArgb` INTEGER NOT NULL,
+                        `bgColorArgb` INTEGER,
+                        `bold` INTEGER NOT NULL,
+                        `italic` INTEGER NOT NULL,
+                        `alignment` TEXT NOT NULL,
+                        `highlightStart` INTEGER,
+                        `highlightEnd` INTEGER,
+                        `windowStartMs` INTEGER NOT NULL,
+                        `windowEndMs` INTEGER NOT NULL,
+                        `layer` TEXT NOT NULL,
+                        `zIndex` INTEGER NOT NULL,
+                        `xNorm` REAL NOT NULL,
+                        `yNorm` REAL NOT NULL,
+                        `scale` REAL NOT NULL,
+                        `rotationDeg` REAL NOT NULL,
+                        `alpha` REAL NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`projectId`) REFERENCES `projects`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_text_overlays_projectId` ON `text_overlays` (`projectId`)")
+            }
+        }
         fun getInstance(context: Context): ClipForgeDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context.applicationContext,
                     ClipForgeDatabase::class.java, Constants.DB_NAME)
-                    .addMigrations(MIGRATION_3_4)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigrationFrom(1, 2)
                     .build().also { INSTANCE = it }
             }

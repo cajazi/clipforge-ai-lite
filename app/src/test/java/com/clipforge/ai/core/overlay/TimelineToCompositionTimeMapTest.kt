@@ -46,6 +46,46 @@ class TimelineToCompositionTimeMapTest {
     }
 
     @Test
+    fun `window before overlap maps unchanged`() {
+        val map = twoClipOverlapMap()
+
+        val mapped = map.mapWindow(500L, 1_500L)
+
+        assertEquals(500L, mapped.first)
+        assertEquals(1_500L, mapped.last)
+    }
+
+    @Test
+    fun `window inside overlap maps through compressed segment`() {
+        val map = twoClipOverlapMap()
+
+        val mapped = map.mapWindow(2_250L, 2_750L)
+
+        assertEquals(2_125L, mapped.first)
+        assertEquals(2_375L, mapped.last)
+    }
+
+    @Test
+    fun `window after overlap maps with consumed duration removed`() {
+        val map = twoClipOverlapMap()
+
+        val mapped = map.mapWindow(3_500L, 4_500L)
+
+        assertEquals(3_000L, mapped.first)
+        assertEquals(4_000L, mapped.last)
+    }
+
+    @Test
+    fun `window spanning overlap boundary maps start and end across segments`() {
+        val map = twoClipOverlapMap()
+
+        val mapped = map.mapWindow(1_750L, 3_250L)
+
+        assertEquals(1_750L, mapped.first)
+        assertEquals(2_750L, mapped.last)
+    }
+
+    @Test
     fun `dip identity`() {
         val map = TimelineToCompositionTimeMap.build(
             listOf(
@@ -77,6 +117,24 @@ class TimelineToCompositionTimeMapTest {
         assertEquals(1_150L, map.toCompositionMs(1_300L))
         assertEquals(1_700L, map.toCompositionMs(2_000L))
         assertEquals(2_800L, map.toCompositionMs(3_400L))
+    }
+
+    @Test
+    fun `window spanning multiple boundaries maps both ends`() {
+        val map = TimelineToCompositionTimeMap.build(
+            listOf(
+                TimePiece(1_000L, 1_000L),
+                TimePiece(600L, 300L),
+                TimePiece(400L, 400L),
+                TimePiece(800L, 800L),
+                TimePiece(1_000L, 500L)
+            )
+        )
+
+        val mapped = map.mapWindow(900L, 3_400L)
+
+        assertEquals(900L, mapped.first)
+        assertEquals(2_800L, mapped.last)
     }
 
     @Test

@@ -64,6 +64,10 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
 }
 
 ksp {
@@ -102,6 +106,7 @@ dependencies {
     implementation(libs.billing.ktx)
     implementation("androidx.appcompat:appcompat:1.7.0")
     testImplementation(libs.junit)
+    testImplementation("org.robolectric:robolectric:4.13")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation("androidx.room:room-testing:2.6.1")
