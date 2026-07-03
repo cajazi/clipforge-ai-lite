@@ -88,6 +88,7 @@ import com.clipforge.ai.core.effects.ExportEffectRegistry
 import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
+import com.clipforge.ai.domain.history.AddTextOverlayCommand
 import com.clipforge.ai.domain.history.DeleteEffectCommand
 import com.clipforge.ai.domain.history.SelectEffectCommand
 import com.clipforge.ai.domain.model.EffectItem
@@ -435,7 +436,14 @@ fun TimelineScreen(
                     zIndex = (timelineTextOverlays.maxOfOrNull { overlay -> overlay.zIndex } ?: -1) + 1
                 )
                 plan.overlay?.let { overlay ->
-                    screenScope.launch { textOverlayRepository.upsertTextOverlay(overlay) }
+                    screenScope.launch {
+                        historyRegistry.execute(
+                            AddTextOverlayCommand(
+                                repository = textOverlayRepository,
+                                textOverlay = overlay
+                            )
+                        )
+                    }
                 }
                 showTextSheet = false
             },
