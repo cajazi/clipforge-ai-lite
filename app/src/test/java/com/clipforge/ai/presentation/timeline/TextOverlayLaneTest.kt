@@ -6,7 +6,10 @@ import com.clipforge.ai.core.overlay.OverlayTransform
 import com.clipforge.ai.core.text.TextAlignment
 import com.clipforge.ai.core.text.TextRenderSpec
 import com.clipforge.ai.domain.model.TextOverlay
+import com.clipforge.ai.domain.selection.SelectionTarget
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TextOverlayLaneTest {
@@ -47,6 +50,57 @@ class TextOverlayLaneTest {
 
         assertEquals(0, placement.offsetPx)
         assertEquals(28, placement.widthPx)
+    }
+
+    @Test
+    fun `selected chip state is based on text overlay id equality`() {
+        val chips = buildTextOverlayChipUiModels(
+            listOf(
+                textOverlay(id = "text-1", startMs = 0L, endMs = 1_000L),
+                textOverlay(id = "text-2", startMs = 1_000L, endMs = 2_000L)
+            ),
+            selectedTextOverlayId = "text-2"
+        )
+
+        assertFalse(chips.first { it.id == "text-1" }.isSelected)
+        assertTrue(chips.first { it.id == "text-2" }.isSelected)
+    }
+
+    @Test
+    fun `chip selection emits correct text overlay id`() {
+        val chip = buildTextOverlayChipUiModels(
+            listOf(textOverlay(id = "text-1", startMs = 0L, endMs = 1_000L))
+        ).single()
+
+        assertEquals("text-1", textOverlayChipSelectionId(chip))
+    }
+
+    @Test
+    fun `selected chip state does not mutate text overlay object`() {
+        val overlay = textOverlay(id = "text-1", startMs = 0L, endMs = 1_000L)
+        val original = overlay.copy()
+
+        buildTextOverlayChipUiModels(listOf(overlay), selectedTextOverlayId = "text-1")
+
+        assertEquals(original, overlay)
+    }
+
+    @Test
+    fun `selected text overlay id is extracted only from text selection target`() {
+        assertEquals("text-1", selectedTextOverlayId(SelectionTarget.TextOverlay("text-1")))
+        assertEquals(null, selectedTextOverlayId(SelectionTarget.Clip("clip-1")))
+        assertEquals(null, selectedTextOverlayId(SelectionTarget.Effect("effect-1")))
+        assertEquals(null, selectedTextOverlayId(SelectionTarget.None))
+    }
+
+    @Test
+    fun `stale selected text overlay clears only when selected overlay disappears`() {
+        val selected = SelectionTarget.TextOverlay("text-1")
+        val overlays = listOf(textOverlay(id = "text-1", startMs = 0L, endMs = 1_000L))
+
+        assertFalse(shouldClearStaleSelectedTextOverlay(selected, overlays))
+        assertTrue(shouldClearStaleSelectedTextOverlay(selected, emptyList()))
+        assertFalse(shouldClearStaleSelectedTextOverlay(SelectionTarget.Clip("clip-1"), emptyList()))
     }
 
     private fun textOverlay(

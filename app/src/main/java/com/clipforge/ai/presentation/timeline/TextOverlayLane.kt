@@ -3,6 +3,7 @@ package com.clipforge.ai.presentation.timeline
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -27,19 +28,25 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.domain.model.TextOverlay
+import com.clipforge.ai.domain.selection.SelectionTarget
 import kotlin.math.roundToInt
 
 @Composable
 fun TextOverlayLane(
     overlays: List<TextOverlay>,
+    selectedTextOverlayId: String?,
     pxPerMs: Float,
     scrollState: ScrollState,
     playheadTrackLead: Dp,
     playheadTrackTrail: Dp,
+    onSelectTextOverlay: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val chips = remember(overlays) { buildTextOverlayChipUiModels(overlays) }
+    val chips = remember(overlays, selectedTextOverlayId) {
+        buildTextOverlayChipUiModels(overlays, selectedTextOverlayId)
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -58,7 +65,8 @@ fun TextOverlayLane(
             } else {
                 TextOverlayChipStrip(
                     chips = chips,
-                    pxPerMs = pxPerMs
+                    pxPerMs = pxPerMs,
+                    onSelectTextOverlay = onSelectTextOverlay
                 )
             }
             Spacer(Modifier.width(playheadTrackTrail))
@@ -72,7 +80,8 @@ data class TextOverlayChipUiModel(
     val startMs: Long,
     val endMs: Long,
     val durationMs: Long,
-    val zIndex: Int
+    val zIndex: Int,
+    val isSelected: Boolean
 )
 
 data class TextOverlayChipPlacement(
@@ -80,7 +89,10 @@ data class TextOverlayChipPlacement(
     val widthPx: Int
 )
 
-fun buildTextOverlayChipUiModels(overlays: List<TextOverlay>): List<TextOverlayChipUiModel> =
+fun buildTextOverlayChipUiModels(
+    overlays: List<TextOverlay>,
+    selectedTextOverlayId: String? = null
+): List<TextOverlayChipUiModel> =
     overlays
         .sortedWith(compareBy<TextOverlay> { it.zIndex }.thenBy { it.windowStartMs }.thenBy { it.id })
         .map { overlay ->
@@ -90,7 +102,8 @@ fun buildTextOverlayChipUiModels(overlays: List<TextOverlay>): List<TextOverlayC
                 startMs = overlay.windowStartMs,
                 endMs = overlay.windowEndMs,
                 durationMs = (overlay.windowEndMs - overlay.windowStartMs).coerceAtLeast(1L),
-                zIndex = overlay.zIndex
+                zIndex = overlay.zIndex,
+                isSelected = overlay.id == selectedTextOverlayId
             )
         }
 
@@ -102,6 +115,19 @@ fun textOverlayChipPlacement(
         offsetPx = (chip.startMs * pxPerMs).roundToInt(),
         widthPx = (chip.durationMs * pxPerMs).roundToInt().coerceAtLeast(MIN_TEXT_CHIP_WIDTH_PX)
     )
+
+fun textOverlayChipSelectionId(chip: TextOverlayChipUiModel): String = chip.id
+
+fun selectedTextOverlayId(selectionTarget: SelectionTarget): String? =
+    selectionTarget.textOverlayId
+
+fun shouldClearStaleSelectedTextOverlay(
+    selectionTarget: SelectionTarget,
+    overlays: List<TextOverlay>
+): Boolean {
+    val selectedId = selectedTextOverlayId(selectionTarget) ?: return false
+    return overlays.none { it.id == selectedId }
+}
 
 @Composable
 private fun EmptyTextOverlayLane() {
@@ -117,7 +143,8 @@ private fun EmptyTextOverlayLane() {
 @Composable
 private fun TextOverlayChipStrip(
     chips: List<TextOverlayChipUiModel>,
-    pxPerMs: Float
+    pxPerMs: Float,
+    onSelectTextOverlay: (String) -> Unit
 ) {
     val density = LocalDensity.current
     Box {
@@ -131,7 +158,8 @@ private fun TextOverlayChipStrip(
                         x = placement.offsetPx,
                         y = 0
                     )
-                }
+                },
+                onClick = { onSelectTextOverlay(textOverlayChipSelectionId(chip)) }
             )
         }
         val stripWidth = chips.maxOfOrNull {
@@ -145,15 +173,19 @@ private fun TextOverlayChipStrip(
 private fun TextOverlayChip(
     chip: TextOverlayChipUiModel,
     width: Dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
+    val borderColor = if (chip.isSelected) AppColors.Warning else Color(0xFF4D6D78)
+    val fillColor = if (chip.isSelected) Color(0xFF3A3150) else Color(0xFF243942)
     Box(
         modifier = modifier
             .width(width)
             .height(24.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF243942))
-            .border(width = 1.dp, color = Color(0xFF4D6D78), shape = RoundedCornerShape(4.dp))
+            .background(fillColor)
+            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.CenterStart
     ) {

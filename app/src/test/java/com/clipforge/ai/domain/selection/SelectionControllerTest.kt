@@ -30,6 +30,15 @@ class SelectionControllerTest {
     }
 
     @Test
+    fun `text overlay target carries text overlay id only`() {
+        val target = SelectionTarget.TextOverlay("text-1")
+
+        assertEquals("text-1", target.textOverlayId)
+        assertNull(target.clipId)
+        assertNull(target.effectId)
+    }
+
+    @Test
     fun `clip replaces effect`() {
         val controller = SelectionController()
 
@@ -80,7 +89,8 @@ class SelectionControllerTest {
         val targets = listOf(
             SelectionTarget.None,
             SelectionTarget.Clip("clip-1"),
-            SelectionTarget.Effect("effect-1")
+            SelectionTarget.Effect("effect-1"),
+            SelectionTarget.TextOverlay("text-1")
         )
 
         targets.forEach { target ->
@@ -106,7 +116,13 @@ class SelectionControllerTest {
             SelectionTarget.Effect(" ")
         }
         assertThrows(IllegalArgumentException::class.java) {
+            SelectionTarget.TextOverlay("")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
             SelectionTarget.fromSnapshot(SelectionSnapshot(SelectionSnapshot.Type.CLIP, null))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SelectionTarget.fromSnapshot(SelectionSnapshot(SelectionSnapshot.Type.TEXT_OVERLAY, null))
         }
     }
 }
