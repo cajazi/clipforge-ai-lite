@@ -64,9 +64,17 @@ class RenderableBitmapOverlayNdcTest {
     fun `outside window has alpha zero and inside window uses renderable alpha`() {
         val overlay = overlayAt(xNorm = 0.5f, yNorm = 0.5f, alpha = 0.65f)
 
-        assertEquals(0f, overlay.getOverlaySettings(999L).getAlphaScale(), EPSILON)
-        assertEquals(0.65f, overlay.getOverlaySettings(1_500L).getAlphaScale(), EPSILON)
-        assertEquals(0f, overlay.getOverlaySettings(2_000L).getAlphaScale(), EPSILON)
+        assertEquals(0f, overlay.getOverlaySettings(999_999L).getAlphaScale(), EPSILON)
+        assertEquals(0.65f, overlay.getOverlaySettings(1_500_000L).getAlphaScale(), EPSILON)
+        assertEquals(0f, overlay.getOverlaySettings(2_000_000L).getAlphaScale(), EPSILON)
+    }
+
+    @Test
+    fun `window start is inclusive and end is exclusive`() {
+        val overlay = overlayAt(xNorm = 0.5f, yNorm = 0.5f, alpha = 0.7f)
+
+        assertEquals(0.7f, overlay.getOverlaySettings(1_000_000L).getAlphaScale(), EPSILON)
+        assertEquals(0f, overlay.getOverlaySettings(2_000_000L).getAlphaScale(), EPSILON)
     }
 
     @Test
@@ -77,7 +85,7 @@ class RenderableBitmapOverlayNdcTest {
     }
 
     private fun RenderableBitmapOverlay.settingsInside(): OverlaySettings =
-        getOverlaySettings(1_500L)
+        getOverlaySettings(1_500_000L)
 
     private fun overlayAt(
         xNorm: Float,
@@ -87,8 +95,8 @@ class RenderableBitmapOverlayNdcTest {
     ): RenderableBitmapOverlay =
         RenderableBitmapOverlay(
             renderable = renderable(xNorm, yNorm, alpha, rotationDeg),
-            windowStartUs = 1_000L,
-            windowEndUs = 2_000L,
+            windowStartUs = 1_000_000L,
+            windowEndUs = 2_000_000L,
             frameW = 1080,
             frameH = 1920
         )

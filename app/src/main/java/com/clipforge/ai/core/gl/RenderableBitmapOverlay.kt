@@ -5,6 +5,12 @@ import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.StaticOverlaySettings
+import com.clipforge.ai.core.overlay.DeterministicOverlayFrameClock
+import com.clipforge.ai.core.overlay.ExportOverlayFrameAdapter
+import com.clipforge.ai.core.overlay.OverlayFrameEngine
+import com.clipforge.ai.core.overlay.OverlayFrameEvaluator
+import com.clipforge.ai.core.overlay.OverlayFrameInput
+import com.clipforge.ai.core.overlay.OverlayFrameLayerState
 import com.clipforge.ai.core.overlay.RenderableOverlay
 
 @UnstableApi
@@ -13,10 +19,22 @@ class RenderableBitmapOverlay(
     private val windowStartUs: Long,
     private val windowEndUs: Long,
     private val frameW: Int,
-    private val frameH: Int
+    private val frameH: Int,
+    frameEvaluator: OverlayFrameEvaluator = OverlayFrameEngine.fromCompositionOverlays(
+        overlays = listOf(
+            OverlayFrameInput(
+                renderable = renderable,
+                windowStartUs = windowStartUs,
+                windowEndUs = windowEndUs,
+                sourceOrder = 0
+            )
+        ),
+        frameClock = DeterministicOverlayFrameClock()
+    )
 ) : BitmapOverlay() {
 
     private val retainedBitmaps = mutableListOf<Bitmap>()
+    private val frameAdapter = ExportOverlayFrameAdapter(frameEvaluator)
     private var lastBitmap: Bitmap = renderable.frameAt(0f, frameW, frameH).also { retainedBitmaps += it }
 
     val compositionWindowStartUs: Long get() = windowStartUs
@@ -24,8 +42,9 @@ class RenderableBitmapOverlay(
     val renderableId: String get() = renderable.id
 
     override fun getBitmap(presentationTimeUs: Long): Bitmap {
-        if (presentationTimeUs in windowStartUs until windowEndUs) {
-            val bitmap = renderable.frameAt(progressAt(presentationTimeUs), frameW, frameH)
+        val layer = layerAt(presentationTimeUs)
+        if (layer != null) {
+            val bitmap = renderable.frameAt(layer.progress, frameW, frameH)
             lastBitmap = bitmap
             if (retainedBitmaps.none { it === bitmap }) {
                 retainedBitmaps += bitmap
@@ -35,7 +54,8 @@ class RenderableBitmapOverlay(
     }
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
-        if (presentationTimeUs !in windowStartUs until windowEndUs) {
+        val layer = layerAt(presentationTimeUs)
+        if (layer == null) {
             return StaticOverlaySettings.Builder()
                 .setAlphaScale(0f)
                 .setScale(1f, 1f)
@@ -45,7 +65,7 @@ class RenderableBitmapOverlay(
                 .build()
         }
 
-        val transform = renderable.transformAt(progressAt(presentationTimeUs))
+        val transform = layer.transform
         return StaticOverlaySettings.Builder()
             .setAlphaScale(transform.alpha)
             .setScale(transform.scale, transform.scale)
@@ -64,10 +84,10 @@ class RenderableBitmapOverlay(
         super.release()
     }
 
-    private fun progressAt(presentationTimeUs: Long): Float {
-        val spanUs = (windowEndUs - windowStartUs).coerceAtLeast(1L)
-        return ((presentationTimeUs - windowStartUs).toFloat() / spanUs.toFloat()).coerceIn(0f, 1f)
-    }
+    private fun layerAt(presentationTimeUs: Long): OverlayFrameLayerState? =
+        frameAdapter.evaluateAtTimeUs(presentationTimeUs)
+            .activeOverlays
+            .firstOrNull { layer -> layer.id == renderable.id }
 
     companion object {
         fun normalizedXToNdc(xNorm: Float): Float = xNorm * 2f - 1f

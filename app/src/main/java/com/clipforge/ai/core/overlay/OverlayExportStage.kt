@@ -4,7 +4,6 @@ package com.clipforge.ai.core.overlay
 
 import androidx.media3.effect.OverlayEffect
 import com.clipforge.ai.core.gl.RenderableBitmapOverlay
-import java.util.concurrent.TimeUnit
 
 object OverlayExportStage {
     suspend fun build(
@@ -30,29 +29,18 @@ object OverlayExportStage {
         val renderables = sources.flatMap { source -> source.load(projectId) }
         if (renderables.isEmpty()) return emptyList()
 
-        return renderables
-            .sortedWith(
-                compareBy<RenderableOverlay> { layerRank(it.layer) }
-                    .thenBy { if (it.layer == OverlayLayer.USER) it.zIndex else 0 }
-            )
-            .map { renderable ->
-                val compositionWindowMs = timeMap.mapWindow(renderable.windowStartMs, renderable.windowEndMs)
+        val frameEngine = OverlayFrameEngine.fromTimelineRenderables(renderables, timeMap)
+
+        return frameEngine.orderedOverlays
+            .map { overlay ->
                 RenderableBitmapOverlay(
-                    renderable = renderable,
-                    windowStartUs = compositionMsToUs(compositionWindowMs.first),
-                    windowEndUs = compositionMsToUs(compositionWindowMs.last),
+                    renderable = overlay.renderable,
+                    windowStartUs = overlay.windowStartUs,
+                    windowEndUs = overlay.windowEndUs,
                     frameW = frameW,
-                    frameH = frameH
+                    frameH = frameH,
+                    frameEvaluator = frameEngine
                 )
             }
     }
-
-    private fun layerRank(layer: OverlayLayer): Int =
-        when (layer) {
-            OverlayLayer.USER -> 0
-            OverlayLayer.SYSTEM -> 1
-        }
-
-    private fun compositionMsToUs(compositionMs: Long): Long =
-        TimeUnit.MILLISECONDS.toMicros(compositionMs)
 }
