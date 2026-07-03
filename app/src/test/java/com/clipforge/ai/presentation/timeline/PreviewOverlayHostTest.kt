@@ -59,7 +59,7 @@ class PreviewOverlayHostTest {
     }
 
     @Test
-    fun `viewport transform is visual only and does not mutate text overlay data`() {
+    fun `overlay placement does not depend on viewport transform math or mutate text overlay data`() {
         val overlay = textOverlay(
             id = "caption",
             startMs = 0L,
@@ -80,14 +80,13 @@ class PreviewOverlayHostTest {
             bitmapWidthPx = 100,
             bitmapHeightPx = 40,
             frameWidthPx = 1_000,
-            frameHeightPx = 2_000,
-            viewportTransform = PreviewOverlayViewportTransform(scale = 2f, panX = 15f, panY = -10f)
+            frameHeightPx = 2_000
         )
 
         assertEquals(originalTransform, overlay.transform)
-        assertEquals(415f, placement.translationX, EPSILON)
-        assertEquals(2_950f, placement.translationY, EPSILON)
-        assertEquals(2.8f, placement.scale, EPSILON)
+        assertEquals(200f, placement.translationX, EPSILON)
+        assertEquals(1_480f, placement.translationY, EPSILON)
+        assertEquals(1.4f, placement.scale, EPSILON)
         assertEquals(1f, placement.alpha, EPSILON)
         assertEquals(12f, placement.rotationDeg, EPSILON)
     }

@@ -8,6 +8,31 @@ import com.clipforge.ai.core.text.TextRenderSpec
 import com.clipforge.ai.domain.model.TextOverlay
 import java.util.UUID
 
+data class TextOverlayCreationPlan(
+    val overlay: TextOverlay?,
+    val mirrorLegacyTimelineItem: Boolean
+)
+
+fun planDefaultTimelineTextOverlayCreation(
+    projectId: String,
+    text: String,
+    timelineStartMs: Long,
+    totalDurationMs: Long,
+    zIndex: Int,
+    id: String = UUID.randomUUID().toString()
+): TextOverlayCreationPlan =
+    TextOverlayCreationPlan(
+        overlay = createDefaultTimelineTextOverlay(
+            projectId = projectId,
+            text = text,
+            timelineStartMs = timelineStartMs,
+            totalDurationMs = totalDurationMs,
+            zIndex = zIndex,
+            id = id
+        ),
+        mirrorLegacyTimelineItem = false
+    )
+
 fun createDefaultTimelineTextOverlay(
     projectId: String,
     text: String,
