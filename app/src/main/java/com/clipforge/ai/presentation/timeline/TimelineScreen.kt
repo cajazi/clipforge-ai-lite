@@ -92,6 +92,7 @@ import com.clipforge.ai.domain.history.DeleteEffectCommand
 import com.clipforge.ai.domain.history.SelectEffectCommand
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.MediaType
+import com.clipforge.ai.domain.model.TextOverlay
 import com.clipforge.ai.domain.model.TimelineSegment
 import com.clipforge.ai.domain.model.TransitionType
 import com.clipforge.ai.domain.selection.SelectionController
@@ -201,6 +202,10 @@ fun TimelineScreen(
     val timelineEffects by remember(projectId, effectRepository) {
         effectRepository.observeEffectsForProject(projectId)
     }.collectAsState(initial = emptyList<EffectItem>())
+    val textOverlayRepository = remember(app) { app.textOverlayRepository }
+    val timelineTextOverlays by remember(projectId, textOverlayRepository) {
+        textOverlayRepository.observeTextOverlaysForProject(projectId)
+    }.collectAsState(initial = emptyList<TextOverlay>())
     val clipAnimationViewModel = remember(projectId, effectRepository, historyRegistry) {
         ClipAnimationViewModel(
             projectId = projectId,
@@ -422,6 +427,15 @@ fun TimelineScreen(
     if (showTextSheet) {
         TextOverlaySheet(
             onApply = {
+                createDefaultTimelineTextOverlay(
+                    projectId = projectId,
+                    text = it,
+                    timelineStartMs = uiState.globalProjectTimeMs,
+                    totalDurationMs = uiState.totalDurationMs,
+                    zIndex = (timelineTextOverlays.maxOfOrNull { overlay -> overlay.zIndex } ?: -1) + 1
+                )?.let { overlay ->
+                    screenScope.launch { textOverlayRepository.upsertTextOverlay(overlay) }
+                }
                 viewModel.addTextOverlay(it)
                 showTextSheet = false
             },
@@ -604,6 +618,7 @@ fun TimelineScreen(
                 CapCutPreviewArea(
                     projectId = projectId,
                     clips = uiState.clips,
+                    textOverlays = timelineTextOverlays,
                     clip = uiState.clips.firstOrNull { it.id == uiState.currentSegment?.clipId }
                         ?: uiState.selectedClipId?.let { selectedId -> uiState.clips.firstOrNull { it.id == selectedId } }
                         ?: uiState.clips.firstOrNull(),
@@ -636,6 +651,7 @@ fun TimelineScreen(
                     isPlaying = uiState.isPlaying,
                     selectedClipId = visibleSelectedClipId,
                     effects = timelineEffects,
+                    textOverlays = timelineTextOverlays,
                     animationMarkers = clipAnimationMarkers,
                     selectionTarget = selectionTarget,
                     interactionMode = uiState.interactionMode,
@@ -1194,6 +1210,7 @@ private fun filmBurnPreviewColor(mode: TransitionSpec.FilmBurnMode): Color = whe
 private fun CapCutPreviewArea(
     projectId: String,
     clips: List<ClipUiModel>,
+    textOverlays: List<TextOverlay>,
     clip: ClipUiModel?,
     segment: TimelineSegment?,
     isPlaying: Boolean,
@@ -1429,12 +1446,19 @@ private fun CapCutPreviewArea(
                         .zIndex(3f)
                 )
             }
+            PreviewOverlayHost(
+                textOverlays = textOverlays,
+                timelineTimeMs = globalTime,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(4f)
+            )
             if (isTransitionActive) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(8.dp)
-                        .zIndex(4f),
+                        .zIndex(5f),
                     color = Color.Black.copy(alpha = 0.78f),
                     shape = RoundedCornerShape(6.dp)
                 ) {
@@ -2541,6 +2565,7 @@ private fun CapCutTimelineEditor(
     isPlaying: Boolean,
     selectedClipId: String?,
     effects: List<EffectItem>,
+    textOverlays: List<TextOverlay>,
     animationMarkers: Map<String, ClipAnimationMarkerState>,
     selectionTarget: SelectionTarget,
     interactionMode: EditorInteractionMode,
@@ -2957,8 +2982,14 @@ private fun CapCutTimelineEditor(
                     if (audioTrackCount > 0) {
                         AddTrackLane("Audio track", onClick = onAddMusic)
                     }
-                    if (textTrackCount > 0) {
-                        AddTrackLane("Text track", onClick = onAddText)
+                    if (textTrackCount > 0 || textOverlays.isNotEmpty()) {
+                        TextOverlayLane(
+                            overlays = textOverlays,
+                            pxPerMs = pxPerMs,
+                            scrollState = scrollState,
+                            playheadTrackLead = playheadTrackLead,
+                            playheadTrackTrail = playheadTrackTrail + STICKY_ADD_MEDIA_PADDING
+                        )
                     }
                     if (overlayTrackCount > 0) {
                         AddTrackLane("Overlay track", onClick = null)

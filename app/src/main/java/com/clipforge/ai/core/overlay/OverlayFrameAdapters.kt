@@ -19,7 +19,6 @@ class ExportOverlayFrameAdapter(
 class PreviewOverlayFrameAdapter(
     private val evaluator: OverlayFrameEvaluator
 ) : SharedOverlayFrameAdapter {
-    // TODO(C10.7): wire Timeline preview through this adapter after TimelineScreen is extracted.
     override fun evaluateAtTimeUs(timeUs: Long): OverlayFrameState =
         evaluator.frameStateAtTimeUs(timeUs)
 
