@@ -56,4 +56,19 @@ class TextOverlayDefaultsTest {
 
         assertNull(overlay)
     }
+
+    @Test
+    fun `add text creation plan uses repository overlay only without legacy mirror`() {
+        val plan = planDefaultTimelineTextOverlayCreation(
+            projectId = "project",
+            text = "Caption",
+            timelineStartMs = 0L,
+            totalDurationMs = 10_000L,
+            zIndex = 0,
+            id = "text-1"
+        )
+
+        assertNotNull(plan.overlay)
+        assertEquals(false, plan.mirrorLegacyTimelineItem)
+    }
 }

@@ -427,16 +427,16 @@ fun TimelineScreen(
     if (showTextSheet) {
         TextOverlaySheet(
             onApply = {
-                createDefaultTimelineTextOverlay(
+                val plan = planDefaultTimelineTextOverlayCreation(
                     projectId = projectId,
                     text = it,
                     timelineStartMs = uiState.globalProjectTimeMs,
                     totalDurationMs = uiState.totalDurationMs,
                     zIndex = (timelineTextOverlays.maxOfOrNull { overlay -> overlay.zIndex } ?: -1) + 1
-                )?.let { overlay ->
+                )
+                plan.overlay?.let { overlay ->
                     screenScope.launch { textOverlayRepository.upsertTextOverlay(overlay) }
                 }
-                viewModel.addTextOverlay(it)
                 showTextSheet = false
             },
             onDismiss = { showTextSheet = false }
@@ -1322,14 +1322,10 @@ private fun CapCutPreviewArea(
                 .aspectRatio(9f / 16f)
                 .clip(RoundedCornerShape(2.dp))
                 .graphicsLayer {
-                    val transform = previewClip?.transform ?: ClipTransform()
-                    val combinedScale = transform.scale * previewZoom
-                    scaleX = combinedScale
-                    scaleY = combinedScale
-                    translationX = transform.offsetX + previewPanX
-                    translationY = transform.offsetY + previewPanY
-                    rotationZ = transform.rotation
-                    alpha = previewClip?.opacity ?: 1f
+                    scaleX = previewZoom
+                    scaleY = previewZoom
+                    translationX = previewPanX
+                    translationY = previewPanY
                 }
                 .transformable(previewTransformState)
                 .pointerInput(previewClip?.id, isPlaying, previewControlsVisible) {
@@ -1362,89 +1358,105 @@ private fun CapCutPreviewArea(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        alpha = outgoingState.alpha.coerceIn(0f, 1f)
-                        translationX = outgoingState.translationX
-                        translationY = outgoingState.translationY
-                        scaleX = outgoingState.scale
-                        scaleY = outgoingState.scale
-                        rotationZ = outgoingState.rotationZ
-                        rotationY = outgoingState.rotationY
-                        rotationX = outgoingState.rotationX
-                        cameraDistance = 12f * density.density
+                        val transform = previewClip?.transform ?: ClipTransform()
+                        scaleX = transform.scale
+                        scaleY = transform.scale
+                        translationX = transform.offsetX
+                        translationY = transform.offsetY
+                        rotationZ = transform.rotation
+                        alpha = previewClip?.opacity ?: 1f
                     }
                     .zIndex(1f),
                 contentAlignment = Alignment.Center
             ) {
-                when {
-                    previewClip?.thumbnailUri != null &&
-                        (previewClip.mediaType == MediaType.VIDEO || previewClip.mediaType == MediaType.OVERLAY_VIDEO) -> {
-                        VideoPreviewPlayer(
-                            projectId = projectId,
-                            clips = clips,
-                            clip = previewClip,
-                            segment = if (segment?.clipId == previewClip.id) segment else null,
-                            isPlaying = isPlaying,
-                            globalTime = globalTime,
-                            isTrimDragging = isTrimDragging && previewClip.id == segment?.clipId,
-                            trimPreviewFrameMs = trimPreviewFrameMs,
-                            onPlayerPosition = onPlayerPosition,
-                            resumeAfterPlaylistPrepared = resumeAfterPlaylistPrepared,
-                            onPreparedPlaylistResume = onPreparedPlaylistResume,
-                            volume = if (previewVolumeClipId == previewClip.id) {
-                                previewVolumeMultiplier
-                            } else {
-                                previewClip.volume
-                            },
-                            lastAddedClipId = lastAddedClipId,
-                            animationPreviewRestartKey = animationPreviewRestartKey,
-                            transitionAlpha = 1f,
-                            onEffectPreviewController = onEffectPreviewController,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    previewClip?.thumbnailUri != null -> {
-                        AsyncImage(
-                            model = previewClip.thumbnailUri,
-                            contentDescription = "Preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    clips.isNotEmpty() -> {
-                        Text("Preview", color = AppColors.TextSecondary, fontSize = 13.sp)
-                    }
-                    else -> {
-                        Text("Preview", color = AppColors.TextSecondary, fontSize = 13.sp)
-                    }
-                }
-            }
-            if (incomingClip != null && incomingState.alpha > 0f) {
-                IncomingTransitionLayer(
-                    clip = incomingClip,
-                    sourceFrameMs = incomingTransitionFrameMs,
-                    alpha = incomingState.alpha,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            translationX = incomingState.translationX
-                            translationY = incomingState.translationY
-                            scaleX = incomingState.scale
-                            scaleY = incomingState.scale
-                            rotationZ = incomingState.rotationZ
-                            rotationY = incomingState.rotationY
-                            rotationX = incomingState.rotationX
-                            cameraDistance = 12f * density.density
-                        }
-                        .zIndex(2f)
-                )
-            }
-            if (transitionVisualState.overlayColor != null && transitionVisualState.overlayAlpha > 0f) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(transitionVisualState.overlayColor.copy(alpha = transitionVisualState.overlayAlpha))
-                        .zIndex(3f)
-                )
+                        .graphicsLayer {
+                            alpha = outgoingState.alpha.coerceIn(0f, 1f)
+                            translationX = outgoingState.translationX
+                            translationY = outgoingState.translationY
+                            scaleX = outgoingState.scale
+                            scaleY = outgoingState.scale
+                            rotationZ = outgoingState.rotationZ
+                            rotationY = outgoingState.rotationY
+                            rotationX = outgoingState.rotationX
+                            cameraDistance = 12f * density.density
+                        }
+                        .zIndex(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when {
+                        previewClip?.thumbnailUri != null &&
+                            (previewClip.mediaType == MediaType.VIDEO || previewClip.mediaType == MediaType.OVERLAY_VIDEO) -> {
+                            VideoPreviewPlayer(
+                                projectId = projectId,
+                                clips = clips,
+                                clip = previewClip,
+                                segment = if (segment?.clipId == previewClip.id) segment else null,
+                                isPlaying = isPlaying,
+                                globalTime = globalTime,
+                                isTrimDragging = isTrimDragging && previewClip.id == segment?.clipId,
+                                trimPreviewFrameMs = trimPreviewFrameMs,
+                                onPlayerPosition = onPlayerPosition,
+                                resumeAfterPlaylistPrepared = resumeAfterPlaylistPrepared,
+                                onPreparedPlaylistResume = onPreparedPlaylistResume,
+                                volume = if (previewVolumeClipId == previewClip.id) {
+                                    previewVolumeMultiplier
+                                } else {
+                                    previewClip.volume
+                                },
+                                lastAddedClipId = lastAddedClipId,
+                                animationPreviewRestartKey = animationPreviewRestartKey,
+                                transitionAlpha = 1f,
+                                onEffectPreviewController = onEffectPreviewController,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        previewClip?.thumbnailUri != null -> {
+                            AsyncImage(
+                                model = previewClip.thumbnailUri,
+                                contentDescription = "Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        clips.isNotEmpty() -> {
+                            Text("Preview", color = AppColors.TextSecondary, fontSize = 13.sp)
+                        }
+                        else -> {
+                            Text("Preview", color = AppColors.TextSecondary, fontSize = 13.sp)
+                        }
+                    }
+                }
+                if (incomingClip != null && incomingState.alpha > 0f) {
+                    IncomingTransitionLayer(
+                        clip = incomingClip,
+                        sourceFrameMs = incomingTransitionFrameMs,
+                        alpha = incomingState.alpha,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = incomingState.translationX
+                                translationY = incomingState.translationY
+                                scaleX = incomingState.scale
+                                scaleY = incomingState.scale
+                                rotationZ = incomingState.rotationZ
+                                rotationY = incomingState.rotationY
+                                rotationX = incomingState.rotationX
+                                cameraDistance = 12f * density.density
+                            }
+                            .zIndex(2f)
+                    )
+                }
+                if (transitionVisualState.overlayColor != null && transitionVisualState.overlayAlpha > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(transitionVisualState.overlayColor.copy(alpha = transitionVisualState.overlayAlpha))
+                            .zIndex(3f)
+                    )
+                }
             }
             PreviewOverlayHost(
                 textOverlays = textOverlays,

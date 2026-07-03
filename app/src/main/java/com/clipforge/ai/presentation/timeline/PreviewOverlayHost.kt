@@ -86,16 +86,6 @@ fun PreviewOverlayHost(
     }
 }
 
-internal data class PreviewOverlayViewportTransform(
-    val scale: Float = 1f,
-    val panX: Float = 0f,
-    val panY: Float = 0f
-) {
-    companion object {
-        val Identity = PreviewOverlayViewportTransform()
-    }
-}
-
 internal data class PreviewOverlayPlacement(
     val translationX: Float,
     val translationY: Float,
@@ -137,16 +127,15 @@ internal fun previewOverlayPlacement(
     bitmapWidthPx: Int,
     bitmapHeightPx: Int,
     frameWidthPx: Int,
-    frameHeightPx: Int,
-    viewportTransform: PreviewOverlayViewportTransform = PreviewOverlayViewportTransform.Identity
+    frameHeightPx: Int
 ): PreviewOverlayPlacement {
     val transform = layer.transform
     val centerX = transform.xNorm * frameWidthPx
     val centerY = transform.yNorm * frameHeightPx
     return PreviewOverlayPlacement(
-        translationX = (centerX - bitmapWidthPx / 2f) * viewportTransform.scale + viewportTransform.panX,
-        translationY = (centerY - bitmapHeightPx / 2f) * viewportTransform.scale + viewportTransform.panY,
-        scale = transform.scale * viewportTransform.scale,
+        translationX = centerX - bitmapWidthPx / 2f,
+        translationY = centerY - bitmapHeightPx / 2f,
+        scale = transform.scale,
         alpha = transform.alpha.coerceIn(0f, 1f),
         rotationDeg = transform.rotationDeg
     )
