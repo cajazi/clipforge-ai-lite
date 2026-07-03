@@ -39,11 +39,21 @@ class EffectPreviewController(
     private var disabledReason: String? = null
     private var released = false
 
+    /**
+     * Monotonic token identifying the most recently requested apply. Every operation that changes
+     * what should be on screen (a new structural schedule, any immediate apply, a suspend, a rebind,
+     * or release) bumps it. A debounced structural apply captures the token at schedule time and
+     * runs only if it is still current when its delay elapses, so a superseded apply can never land
+     * out of order — independent of how the [scope] dispatcher schedules the resumption.
+     */
+    private var applyGeneration = 0
+
     fun bind(projectId: String) {
         if (released || boundProjectId == projectId) return
         boundProjectId = projectId
         observeJob?.cancel()
         pendingApplyJob?.cancel()
+        applyGeneration++
         latestEffects = emptyList()
         currentStructuralKeys = emptyList()
         liveParamsByItemId = emptyMap()
@@ -109,6 +119,7 @@ class EffectPreviewController(
         logger("EFFECT_PREVIEW SUSPEND depth=$suspendDepth")
         if (suspendDepth == 1) {
             pendingApplyJob?.cancel()
+            applyGeneration++
             setVideoEffects(emptyList(), "suspend")
         }
     }
@@ -128,6 +139,7 @@ class EffectPreviewController(
         logger("EFFECT_PREVIEW RELEASE projectId=$boundProjectId")
         observeJob?.cancel()
         pendingApplyJob?.cancel()
+        applyGeneration++
         observeJob = null
         pendingApplyJob = null
         liveParamsByItemId = emptyMap()
@@ -141,8 +153,13 @@ class EffectPreviewController(
             return
         }
         pendingApplyJob?.cancel()
+        val scheduledGeneration = ++applyGeneration
         pendingApplyJob = scope.launch {
             delay(STRUCTURAL_DEBOUNCE_MS)
+            // Drop this apply if anything superseded it while the debounce was pending. Relying on
+            // job cancellation alone is not enough: once the delay elapses the resumption may already
+            // be queued, so a later operation must be able to invalidate it by generation, not race.
+            if (scheduledGeneration != applyGeneration) return@launch
             applyNow(force = false)
         }
     }
@@ -150,6 +167,8 @@ class EffectPreviewController(
     private fun applyNow(force: Boolean) {
         if (released || disabledReason != null || suspendDepth > 0) return
         pendingApplyJob?.cancel()
+        // Supersede any debounced apply still pending: this immediate apply is now the latest intent.
+        applyGeneration++
         val plan = buildPlan()
         if (!force && plan.structuralKeys == currentStructuralKeys) return
         if (plan.attachments.isEmpty() && currentStructuralKeys.isEmpty()) {

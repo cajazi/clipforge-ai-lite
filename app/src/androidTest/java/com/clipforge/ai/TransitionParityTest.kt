@@ -29,6 +29,7 @@ import org.junit.runner.RunWith
 @UnstableApi
 @RunWith(AndroidJUnit4::class)
 @RequiresGpuExport
+@RequiresRealGpu
 class TransitionParityTest {
 
     private val aTailStartMs = 1200L

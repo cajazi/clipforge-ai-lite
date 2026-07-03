@@ -21,6 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.RequiresGpuExport
+import com.clipforge.ai.RequiresRealGpu
 import com.clipforge.ai.core.animation.AnimationPropertyKeys
 import com.clipforge.ai.core.effects.AnimationEffectRegistrations
 import com.clipforge.ai.core.effects.EffectScope
@@ -59,6 +60,7 @@ import java.util.concurrent.TimeUnit
  */
 @RunWith(AndroidJUnit4::class)
 @RequiresGpuExport
+@RequiresRealGpu
 class AnimationPreviewExportPixelTest {
 
     @Before
