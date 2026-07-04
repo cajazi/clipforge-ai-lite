@@ -333,17 +333,24 @@ fun TimelineScreen(
     LaunchedEffect(projectId) { viewModel.loadForProject(projectId) }
     LaunchedEffect(uiState.selectedClipId) {
         val selectedClipId = uiState.selectedClipId
-        if (selectedClipId != null && selectionTarget !is SelectionTarget.Effect) {
+        if (
+            selectedClipId != null &&
+            selectionTarget !is SelectionTarget.Effect &&
+            selectionTarget !is SelectionTarget.TextOverlay
+        ) {
             selectionController.selectClip(selectedClipId)
         }
     }
-    LaunchedEffect(timelineEffects, uiState.clips, selectionTarget) {
+    LaunchedEffect(timelineEffects, timelineTextOverlays, uiState.clips, selectionTarget) {
         when (val target = selectionTarget) {
             is SelectionTarget.Clip -> {
                 if (uiState.clips.none { it.id == target.id }) selectionController.clear()
             }
             is SelectionTarget.Effect -> {
                 if (timelineEffects.none { it.id == target.id }) selectionController.clear()
+            }
+            is SelectionTarget.TextOverlay -> {
+                if (shouldClearStaleSelectedTextOverlay(target, timelineTextOverlays)) selectionController.clear()
             }
             SelectionTarget.None -> Unit
         }
@@ -693,6 +700,9 @@ fun TimelineScreen(
                                 )
                             )
                         }
+                    },
+                    onSelectTextOverlay = { textOverlayId ->
+                        selectionController.restore(SelectionTarget.TextOverlay(textOverlayId).toSnapshot())
                     },
                     onAddMusic = { onAddMusic?.invoke() ?: launchAudioPicker() },
                     onAddText = { onAddText?.invoke() ?: run { showTextSheet = true } },
@@ -2606,6 +2616,7 @@ private fun CapCutTimelineEditor(
     onResumeEffects: () -> Unit,
     onSelectClip: (String) -> Unit,
     onSelectEffect: (String) -> Unit,
+    onSelectTextOverlay: (String) -> Unit,
     onAddMusic: () -> Unit,
     onAddText: () -> Unit,
     audioTrackCount: Int,
@@ -3005,10 +3016,15 @@ private fun CapCutTimelineEditor(
                     if (textTrackCount > 0 || textOverlays.isNotEmpty()) {
                         TextOverlayLane(
                             overlays = textOverlays,
+                            selectedTextOverlayId = selectedTextOverlayId(selectionTarget),
                             pxPerMs = pxPerMs,
                             scrollState = scrollState,
                             playheadTrackLead = playheadTrackLead,
-                            playheadTrackTrail = playheadTrackTrail + STICKY_ADD_MEDIA_PADDING
+                            playheadTrackTrail = playheadTrackTrail + STICKY_ADD_MEDIA_PADDING,
+                            onSelectTextOverlay = { textOverlayId ->
+                                onSelectTextOverlay(textOverlayId)
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
                         )
                     }
                     if (overlayTrackCount > 0) {

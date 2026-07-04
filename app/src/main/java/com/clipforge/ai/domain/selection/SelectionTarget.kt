@@ -15,15 +15,25 @@ sealed class SelectionTarget {
         }
     }
 
+    data class TextOverlay(val id: String) : SelectionTarget() {
+        init {
+            require(id.isNotBlank()) { "Text overlay selection id must not be blank" }
+        }
+    }
+
     val clipId: String?
         get() = (this as? Clip)?.id
 
     val effectId: String?
         get() = (this as? Effect)?.id
 
+    val textOverlayId: String?
+        get() = (this as? TextOverlay)?.id
+
     fun toSnapshot(): SelectionSnapshot = when (this) {
         is Clip -> SelectionSnapshot(type = SelectionSnapshot.Type.CLIP, id = id)
         is Effect -> SelectionSnapshot(type = SelectionSnapshot.Type.EFFECT, id = id)
+        is TextOverlay -> SelectionSnapshot(type = SelectionSnapshot.Type.TEXT_OVERLAY, id = id)
         None -> SelectionSnapshot(type = SelectionSnapshot.Type.NONE, id = null)
     }
 
@@ -32,6 +42,9 @@ sealed class SelectionTarget {
             SelectionSnapshot.Type.NONE -> None
             SelectionSnapshot.Type.CLIP -> Clip(requireNotNull(snapshot.id) { "Clip selection snapshot requires an id" })
             SelectionSnapshot.Type.EFFECT -> Effect(requireNotNull(snapshot.id) { "Effect selection snapshot requires an id" })
+            SelectionSnapshot.Type.TEXT_OVERLAY -> TextOverlay(
+                requireNotNull(snapshot.id) { "Text overlay selection snapshot requires an id" }
+            )
         }
     }
 }
@@ -43,6 +56,7 @@ data class SelectionSnapshot(
     enum class Type {
         NONE,
         CLIP,
-        EFFECT
+        EFFECT,
+        TEXT_OVERLAY
     }
 }
