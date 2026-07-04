@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.clipforge.ai.ClipForgeApp
 import com.clipforge.ai.core.auth.RegisterState
+import com.clipforge.ai.core.network.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,15 +53,29 @@ class RegisterViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun getGoogleOAuthUrl(): String? {
-        val url = authManager.getGoogleOAuthUrl()
-        return if (url.isBlank()) {
-            _ui.value = _ui.value.copy(
-                error = authManager.getAuthConfigError() ?: "Google sign-in could not start."
-            )
-            null
-        } else {
-            url
+    fun onGoogleSignInStarted() {
+        _ui.value = _ui.value.copy(isLoading = true, error = null)
+    }
+
+    fun onGoogleSignInCancelled() {
+        _ui.value = _ui.value.copy(isLoading = false)
+    }
+
+    fun onGoogleSignInFailed(message: String) {
+        _ui.value = _ui.value.copy(isLoading = false, error = message)
+    }
+
+    fun loginWithGoogleIdToken(idToken: String, nonce: String?) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(isLoading = true, error = null)
+            when (val r = authManager.loginWithGoogleIdToken(idToken, nonce)) {
+                is NetworkResult.Success -> _ui.value = _ui.value.copy(isLoading = false, isSuccess = true)
+                is NetworkResult.Error -> _ui.value = _ui.value.copy(
+                    isLoading = false,
+                    error = r.message ?: "Google sign-in failed"
+                )
+                else -> _ui.value = _ui.value.copy(isLoading = false)
+            }
         }
     }
 }

@@ -40,6 +40,11 @@ android {
             "SUPABASE_ANON_KEY",
             "\"${localProperty("SUPABASE_ANON_KEY")}\""
         )
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"${localProperty("GOOGLE_WEB_CLIENT_ID")}\""
+        )
     }
 
     buildTypes {
@@ -104,6 +109,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.play.services.ads)
     implementation(libs.billing.ktx)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation("androidx.appcompat:appcompat:1.7.0")
     testImplementation(libs.junit)
     testImplementation("org.robolectric:robolectric:4.13")

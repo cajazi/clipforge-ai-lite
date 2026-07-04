@@ -22,7 +22,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.net.URI
 
 class AuthApiClientTest {
     @Test
@@ -62,6 +61,24 @@ class AuthApiClientTest {
             SUPABASE_MALFORMED_KEY_MESSAGE,
             SupabaseConfigValidator.validate("https://project.supabase.co", "PASTE_ANON_KEY_HERE").error
         )
+    }
+
+    @Test
+    fun googleWebClientIdValidationRequiresWebClientIdShape() {
+        assertEquals(
+            GOOGLE_WEB_CLIENT_ID_MISSING_MESSAGE,
+            GoogleSignInConfig.validate(" ").error
+        )
+        assertEquals(
+            GOOGLE_WEB_CLIENT_ID_MALFORMED_MESSAGE,
+            GoogleSignInConfig.validate("android-client-id").error
+        )
+
+        val validation = GoogleSignInConfig.validate(
+            " 1234567890-abcdef.apps.googleusercontent.com "
+        )
+        assertTrue(validation.isValid)
+        assertEquals("1234567890-abcdef.apps.googleusercontent.com", validation.webClientId)
     }
 
     @Test
@@ -221,19 +238,28 @@ class AuthApiClientTest {
     }
 
     @Test
-    fun googleOAuthUrlUsesPkceAndDeepLinkRedirect() {
-        val start = requireNotNull(authClient().googleOAuthStart())
-        val uri = URI(start.url)
+    fun googleIdTokenRequestUsesSupabaseIdTokenEndpointHeadersAndNonce() = runBlocking {
+        val fake = FakeCallFactory(
+            code = 200,
+            body = """{"access_token":"access","refresh_token":"refresh","user":{"id":"u1","email":"person@example.com"}}"""
+        )
+        val client = authClient(fake)
 
-        assertEquals("https", uri.scheme)
-        assertEquals("project.supabase.co", uri.host)
-        assertEquals("/auth/v1/authorize", uri.path)
-        assertTrue(uri.rawQuery.contains("provider=google"))
-        assertTrue(uri.rawQuery.contains("redirect_to=clipforgeai%3A%2F%2Fauth-callback"))
-        assertTrue(uri.rawQuery.contains("code_challenge="))
-        assertTrue(uri.rawQuery.contains("code_challenge_method=s256"))
-        assertFalse(start.url.contains(TEST_ANON_KEY))
-        assertTrue(start.codeVerifier.isNotBlank())
+        val result = client.signInWithGoogleIdToken("google.id.token", "nonce-value")
+
+        assertNull(result.error)
+        val request = requireNotNull(fake.request)
+        assertEquals("POST", request.method)
+        assertEquals("/auth/v1/token", request.url.encodedPath)
+        assertEquals("grant_type=id_token", request.url.encodedQuery)
+        assertEquals(TEST_ANON_KEY, request.header("apikey"))
+        assertEquals("Bearer $TEST_ANON_KEY", request.header("Authorization"))
+        assertEquals("application/json", request.header("Content-Type"))
+
+        val json = Gson().fromJson(request.bodyAsString(), JsonObject::class.java)
+        assertEquals("google", json.get("provider").asString)
+        assertEquals("google.id.token", json.get("id_token").asString)
+        assertEquals("nonce-value", json.get("nonce").asString)
     }
 
     @Test

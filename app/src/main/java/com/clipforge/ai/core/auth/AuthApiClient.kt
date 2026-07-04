@@ -16,11 +16,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.net.SocketTimeoutException
-import java.net.URLEncoder
 import java.net.UnknownHostException
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 
@@ -34,11 +30,6 @@ data class AuthResult(
     val refreshToken: String? = null,
     val needsConfirmation: Boolean = false,
     val error: String? = null
-)
-
-data class OAuthStart(
-    val url: String,
-    val codeVerifier: String
 )
 
 class AuthApiClient(
@@ -95,6 +86,25 @@ class AuthApiClient(
                 )
             )
             post("/token?grant_type=pkce", body)
+        }
+
+    suspend fun signInWithGoogleIdToken(idToken: String, nonce: String?): AuthResult =
+        withContext(Dispatchers.IO) {
+            configError()?.let { return@withContext it }
+            if (idToken.isBlank()) {
+                return@withContext AuthResult(error = "Google sign-in did not return an ID token.")
+            }
+            debug(
+                "signInWithGoogleIdToken requested host=${config.host ?: "none"} " +
+                    "provider=google noncePresent=${!nonce.isNullOrBlank()}"
+            )
+            val payload = mutableMapOf(
+                "provider" to "google",
+                "id_token" to idToken
+            )
+            nonce?.takeIf { it.isNotBlank() }?.let { payload["nonce"] = it }
+            val body = gson.toJson(payload)
+            post("/token?grant_type=id_token", body)
         }
 
     suspend fun getUser(accessToken: String): AuthResult =
@@ -170,24 +180,6 @@ class AuthApiClient(
             debug("resetPassword malformed url: ${e.message}")
             false
         }
-    }
-
-    fun googleOAuthStart(): OAuthStart? {
-        if (configError() != null) return null
-        val codeVerifier = createCodeVerifier()
-        val codeChallenge = codeChallengeS256(codeVerifier)
-        val redirect = encode(OAUTH_REDIRECT)
-        val challenge = encode(codeChallenge)
-        val url = "${config.authBaseUrl}/authorize" +
-            "?provider=google" +
-            "&redirect_to=$redirect" +
-            "&code_challenge=$challenge" +
-            "&code_challenge_method=s256"
-        debug(
-            "Google OAuth start host=${config.host ?: "none"} endpoint=/authorize " +
-                "redirect=$OAUTH_REDIRECT pkce=true"
-        )
-        return OAuthStart(url = url, codeVerifier = codeVerifier)
     }
 
     private fun post(path: String, bodyJson: String): AuthResult {
@@ -360,24 +352,10 @@ class AuthApiClient(
             "\"${match.groupValues[1]}\":\"<redacted>\""
         }
 
-    private fun createCodeVerifier(): String {
-        val bytes = ByteArray(32)
-        SecureRandom().nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
-
-    private fun codeChallengeS256(codeVerifier: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(codeVerifier.toByteArray(Charsets.US_ASCII))
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
-    }
-
-    private fun encode(value: String): String =
-        URLEncoder.encode(value, Charsets.UTF_8.name())
 }
 
 private val SENSITIVE_JSON_FIELD =
-    Regex("(?i)\"(access_token|refresh_token|password|apikey|authorization)\"\\s*:\\s*\"[^\"]*\"")
+    Regex("(?i)\"(access_token|refresh_token|id_token|password|apikey|authorization)\"\\s*:\\s*\"[^\"]*\"")
 
 private fun defaultHttpClient(): OkHttpClient =
     OkHttpClient.Builder()

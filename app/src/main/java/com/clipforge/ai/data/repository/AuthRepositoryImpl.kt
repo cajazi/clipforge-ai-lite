@@ -52,12 +52,23 @@ class AuthRepositoryImpl(
         }
     }
 
-    override suspend fun loginWithGoogle(): String =
-        withContext(Dispatchers.IO) {
-            val oauthStart = api.googleOAuthStart() ?: return@withContext ""
-            session.saveOAuthCodeVerifier(oauthStart.codeVerifier)
-            oauthStart.url
+    override suspend fun loginWithGoogleIdToken(
+        idToken: String,
+        nonce: String?
+    ): NetworkResult<AuthUser> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "loginWithGoogleIdToken requested")
+        val r = api.signInWithGoogleIdToken(idToken, nonce)
+        when {
+            r.error != null -> NetworkResult.Error(message = r.error)
+            r.accessToken != null && r.userId != null -> {
+                val user = r.toUser()
+                session.saveSession(user)
+                Log.d(TAG, "Google login success: ${user.email}")
+                NetworkResult.Success(user)
+            }
+            else -> NetworkResult.Error(message = "Google sign-in failed. Please try again.")
         }
+    }
 
     override suspend fun sendPasswordReset(email: String): NetworkResult<Unit> =
         withContext(Dispatchers.IO) {

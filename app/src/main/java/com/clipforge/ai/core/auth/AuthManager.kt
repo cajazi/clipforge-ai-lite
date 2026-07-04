@@ -67,6 +67,14 @@ class AuthManager(context: Context) {
             }
         }
 
+    suspend fun loginWithGoogleIdToken(idToken: String, nonce: String?): NetworkResult<AuthUser> =
+        withContext(Dispatchers.IO) {
+            when (val r = authRepo.loginWithGoogleIdToken(idToken, nonce)) {
+                is NetworkResult.Success -> { syncAndLoad(r.data); r }
+                else -> r
+            }
+        }
+
     suspend fun handleDeepLink(uri: Uri): NetworkResult<AuthUser> =
         withContext(Dispatchers.IO) {
             when (val r = authRepo.handleDeepLink(uri)) {
@@ -77,9 +85,9 @@ class AuthManager(context: Context) {
 
     suspend fun logout() { authRepo.logout(); _authState.value = AuthState.LoggedOut }
 
-    fun getGoogleOAuthUrl(): String = kotlinx.coroutines.runBlocking { authRepo.loginWithGoogle() }
-
     fun getAuthConfigError(): String? = SupabaseConfig.validationError()
+
+    fun getGoogleSignInConfigError(): String? = GoogleSignInConfig.validate().error
 
     private suspend fun syncAndLoad(user: AuthUser) {
         // Upsert profile — DB trigger may have already created it
