@@ -22,7 +22,7 @@ class AuthRepositoryImpl(
     override suspend fun registerWithEmail(
         name: String, email: String, password: String
     ): RegisterResult = withContext(Dispatchers.IO) {
-        Log.d(TAG, "registerWithEmail: $email")
+        Log.d(TAG, "registerWithEmail requested")
         val r = api.signUp(email, password, name)
         when {
             r.error != null          -> RegisterResult.Failure(r.error)
@@ -39,7 +39,7 @@ class AuthRepositoryImpl(
     override suspend fun loginWithEmail(
         email: String, password: String
     ): NetworkResult<AuthUser> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "loginWithEmail: $email")
+        Log.d(TAG, "loginWithEmail requested")
         val r = api.signIn(email, password)
         when {
             r.error != null       -> NetworkResult.Error(message = r.error)
@@ -70,12 +70,11 @@ class AuthRepositoryImpl(
 
     override suspend fun handleDeepLink(uri: Uri): NetworkResult<AuthUser> =
         withContext(Dispatchers.IO) {
-            Log.d(TAG, "handleDeepLink: $uri")
+            Log.d(TAG, "handleDeepLink: ${uri.safeAuthSummary()}")
             val raw = uri.fragment?.takeIf { it.isNotBlank() }
                 ?: uri.query?.takeIf { it.isNotBlank() }
                 ?: return@withContext NetworkResult.Error(message = "No token in callback")
 
-            Log.d(TAG, "Parsing: $raw")
             val params = raw.split("&").associate { p ->
                 val i = p.indexOf("=")
                 if (i > 0) p.substring(0, i) to
@@ -88,8 +87,11 @@ class AuthRepositoryImpl(
             val rt = params["refresh_token"] ?: ""
             val code = params["code"] ?: ""
             val error = params["error_description"] ?: params["error"]
-            Log.d(TAG, "access_token present: ${at.isNotBlank()}")
-            Log.d(TAG, "auth code present: ${code.isNotBlank()}")
+            Log.d(
+                TAG,
+                "callback fields accessToken=${at.isNotBlank()} refreshToken=${rt.isNotBlank()} " +
+                    "code=${code.isNotBlank()} error=${!error.isNullOrBlank()}"
+            )
 
             if (!error.isNullOrBlank()) {
                 session.clearOAuthCodeVerifier()
@@ -168,4 +170,11 @@ class AuthRepositoryImpl(
         accessToken  = accessToken  ?: "",
         refreshToken = refreshToken ?: ""
     )
+}
+
+private fun Uri.safeAuthSummary(): String {
+    val raw = fragment?.takeIf { it.isNotBlank() } ?: query.orEmpty()
+    return "scheme=$scheme host=$host accessToken=${raw.contains("access_token=")} " +
+        "refreshToken=${raw.contains("refresh_token=")} code=${raw.contains("code=")} " +
+        "error=${raw.contains("error=") || raw.contains("error_description=")}"
 }

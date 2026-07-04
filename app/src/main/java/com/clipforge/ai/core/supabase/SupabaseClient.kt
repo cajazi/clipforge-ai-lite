@@ -1,5 +1,6 @@
 package com.clipforge.ai.core.supabase
 
+import com.clipforge.ai.BuildConfig
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -31,7 +32,13 @@ object SupabaseClient {
             chain.proceed(request)
         }
         .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            redactHeader("apikey")
+            redactHeader("Authorization")
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BASIC
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         })
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -39,7 +46,7 @@ object SupabaseClient {
         .build()
 
     val retrofit: Retrofit = Retrofit.Builder()
-        .baseUrl("${SupabaseConfig.SUPABASE_URL}/rest/v1/")
+        .baseUrl(SupabaseConfig.REST_BASE_URL)
         .client(okHttpClient)
         .addConverterFactory(GsonConverterFactory.create())
         .build()

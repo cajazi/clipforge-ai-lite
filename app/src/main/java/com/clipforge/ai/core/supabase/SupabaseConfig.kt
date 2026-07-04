@@ -5,22 +5,42 @@ import com.clipforge.ai.BuildConfig
 
 object SupabaseConfig {
 
-    val SUPABASE_URL: String by lazy {
-        BuildConfig.SUPABASE_URL.also {
-            Log.d("AUTH_CHECK", "URL empty = ${it.isBlank()}")
-            if (it.isBlank()) Log.e("AUTH_CHECK", "SUPABASE_URL not configured in local.properties!")
+    private val validation: SupabaseConfigValidation by lazy {
+        SupabaseConfigValidator.validate(
+            rawUrl = BuildConfig.SUPABASE_URL,
+            rawAnonKey = BuildConfig.SUPABASE_ANON_KEY
+        ).also {
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    "AUTH_CHECK",
+                    "urlBlank=${it.urlBlank} urlMalformed=${it.urlMalformed} " +
+                        "keyBlank=${it.keyBlank} keyMalformed=${it.keyMalformed} " +
+                        "host=${it.host ?: "none"}"
+                )
+            }
+            if (it.error != null) {
+                Log.e("AUTH_CHECK", it.error)
+            }
         }
+    }
+
+    val SUPABASE_URL: String by lazy {
+        validation.normalizedUrl
     }
 
     val SUPABASE_ANON_KEY: String by lazy {
-        BuildConfig.SUPABASE_ANON_KEY.also {
-            Log.d("AUTH_CHECK", "KEY empty = ${it.isBlank()}")
-            if (it.isBlank()) Log.e("AUTH_CHECK", "SUPABASE_ANON_KEY not configured in local.properties!")
-        }
+        validation.anonKey
     }
 
+    val AUTH_BASE_URL: String get() = validation.authBaseUrl
+    val REST_BASE_URL: String get() = validation.restBaseUrl
+
     fun isConfigured(): Boolean =
-        SUPABASE_URL.isNotBlank() && SUPABASE_ANON_KEY.isNotBlank()
+        validation.isValid
+
+    fun validationError(): String? = validation.error
+
+    fun authHost(): String? = validation.host
 
     const val ADMIN_EMAIL       = "cossybest24@gmail.com"
     const val BUCKET_MEDIA      = "project-media"

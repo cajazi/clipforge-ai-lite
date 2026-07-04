@@ -33,12 +33,12 @@ android {
         buildConfigField(
             "String",
             "SUPABASE_URL",
-            "\"${localProperty("SUPABASE_URL", "https://hsvtugdzzmtwqglzjjqt.supabase.co")}\""
+            "\"${localProperty("SUPABASE_URL")}\""
         )
         buildConfigField(
             "String",
             "SUPABASE_ANON_KEY",
-            "\"${localProperty("SUPABASE_ANON_KEY", "PASTE_ANON_KEY_HERE")}\""
+            "\"${localProperty("SUPABASE_ANON_KEY")}\""
         )
     }
 

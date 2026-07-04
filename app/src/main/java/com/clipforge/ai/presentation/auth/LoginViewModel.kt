@@ -49,7 +49,9 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     fun getGoogleOAuthUrl(): String? {
         val url = authManager.getGoogleOAuthUrl()
         return if (url.isBlank()) {
-            _ui.value = _ui.value.copy(error = "Supabase is not configured. Add SUPABASE_ANON_KEY to local.properties.")
+            _ui.value = _ui.value.copy(
+                error = authManager.getAuthConfigError() ?: "Google sign-in could not start."
+            )
             null
         } else {
             url

@@ -79,6 +79,8 @@ class AuthManager(context: Context) {
 
     fun getGoogleOAuthUrl(): String = kotlinx.coroutines.runBlocking { authRepo.loginWithGoogle() }
 
+    fun getAuthConfigError(): String? = SupabaseConfig.validationError()
+
     private suspend fun syncAndLoad(user: AuthUser) {
         // Upsert profile — DB trigger may have already created it
         val existing = profileRepo.getProfile(user.id)
