@@ -35,6 +35,7 @@ data class AuthResult(
 class AuthApiClient(
     rawSupabaseUrl: String = BuildConfig.SUPABASE_URL,
     rawAnonKey: String = BuildConfig.SUPABASE_ANON_KEY,
+    private val expectedGoogleWebClientId: String = BuildConfig.GOOGLE_WEB_CLIENT_ID,
     private val callFactory: Call.Factory = defaultHttpClient()
 ) {
 
@@ -92,7 +93,23 @@ class AuthApiClient(
         withContext(Dispatchers.IO) {
             configError()?.let { return@withContext it }
             if (idToken.isBlank()) {
-                return@withContext AuthResult(error = "Google sign-in did not return an ID token.")
+                return@withContext AuthResult(error = "Google ID token not returned.")
+            }
+            val expectedAudience = expectedGoogleWebClientId.trim()
+            val audience = GoogleIdTokenDiagnostics.inspect(idToken, expectedAudience)
+            if (audience != null) {
+                debug(
+                    "google id token audience aud=${audience.audForLog} " +
+                        "azp=${audience.azp ?: "none"} expected=$expectedAudience " +
+                        "audMatchesExpected=${audience.audMatchesExpected}"
+                )
+                if (!audience.audMatchesExpected) {
+                    return@withContext AuthResult(
+                        error = "OAuth client ID mismatch. Check Google Web Client ID setup."
+                    )
+                }
+            } else {
+                debug("google id token audience unavailable expected=$expectedAudience")
             }
             debug(
                 "signInWithGoogleIdToken requested host=${config.host ?: "none"} " +
@@ -104,7 +121,7 @@ class AuthApiClient(
             )
             nonce?.takeIf { it.isNotBlank() }?.let { payload["nonce"] = it }
             val body = gson.toJson(payload)
-            post("/token?grant_type=id_token", body)
+            post("/token?grant_type=id_token", body, ::parseGoogleIdTokenResponse)
         }
 
     suspend fun getUser(accessToken: String): AuthResult =
@@ -182,7 +199,11 @@ class AuthApiClient(
         }
     }
 
-    private fun post(path: String, bodyJson: String): AuthResult {
+    private fun post(
+        path: String,
+        bodyJson: String,
+        parser: (String, Int) -> AuthResult = ::parseResponse
+    ): AuthResult {
         configError()?.let { return it }
         return try {
             val request = Request.Builder()
@@ -193,7 +214,7 @@ class AuthApiClient(
             val response = callFactory.newCall(request).execute()
             val responseBody = response.body?.string().orEmpty()
             debugHttp(path, response.code, responseBody)
-            parseResponse(responseBody, response.code)
+            parser(responseBody, response.code)
         } catch (e: IOException) {
             logIOException(path, e)
             AuthResult(error = networkErrorMessage(e))
@@ -203,15 +224,27 @@ class AuthApiClient(
         }
     }
 
-    internal fun parseResponse(json: String, code: Int): AuthResult {
+    internal fun parseResponse(json: String, code: Int): AuthResult =
+        parseResponse(json, code, ::friendly)
+
+    internal fun parseGoogleIdTokenResponse(json: String, code: Int): AuthResult =
+        parseResponse(json, code, ::googleIdTokenFriendly)
+
+    private fun parseResponse(
+        json: String,
+        code: Int,
+        errorMapper: (String?, Int) -> String
+    ): AuthResult {
         val obj = parseJsonObject(json)
         if (obj == null) {
-            return AuthResult(error = httpStatusMessage(code))
+            return AuthResult(
+                error = if (code !in 200..299) errorMapper(null, code) else httpStatusMessage(code)
+            )
         }
 
         val rawError = obj.errorText()
         if (code !in 200..299 || rawError != null) {
-            return AuthResult(error = friendly(rawError, code))
+            return AuthResult(error = errorMapper(rawError, code))
         }
 
         val userObj = obj.objectOrNull("user")
@@ -313,6 +346,28 @@ class AuthApiClient(
         }
     }
 
+    private fun googleIdTokenFriendly(raw: String?, code: Int): String {
+        val text = raw.orEmpty()
+        val lower = text.lowercase()
+        return when {
+            code == 401 ||
+                lower.contains("invalid api key") ||
+                lower.contains("invalid apikey") -> "Auth config error. Check the Supabase anon key."
+            lower.contains("audience") ||
+                lower.contains("invalid aud") ||
+                lower.contains("client id") -> "OAuth client ID mismatch. Check Google Web Client ID setup."
+            lower.contains("nonce") -> "Supabase rejected Google token: nonce verification failed."
+            lower.contains("provider") ||
+                lower.contains("disabled") ||
+                lower.contains("not enabled") -> "Supabase rejected Google token: Google provider is not configured."
+            code == 404 -> "Supabase auth endpoint not found. Check SUPABASE_URL."
+            code >= 500 -> "Supabase auth service error. Please try again."
+            text.isNotBlank() -> "Supabase rejected Google token: ${sanitizeForLog(text).take(140)}"
+            code !in 200..299 -> "Supabase rejected Google token. (HTTP $code)"
+            else -> "Supabase rejected Google token."
+        }
+    }
+
     private fun httpStatusMessage(code: Int): String = when {
         code == 401 -> "Auth config error. Check the Supabase anon key."
         code == 404 -> "Supabase auth endpoint not found. Check SUPABASE_URL."
@@ -350,12 +405,18 @@ class AuthApiClient(
     private fun sanitizeForLog(value: String): String =
         value.replace(SENSITIVE_JSON_FIELD) { match ->
             "\"${match.groupValues[1]}\":\"<redacted>\""
-        }
+        }.replace(JWT_LIKE_VALUE, "<redacted-jwt>")
 
 }
 
 private val SENSITIVE_JSON_FIELD =
-    Regex("(?i)\"(access_token|refresh_token|id_token|password|apikey|authorization)\"\\s*:\\s*\"[^\"]*\"")
+    Regex(
+        "(?i)\"(access_token|refresh_token|id_token|password|apikey|authorization|" +
+            "client_secret|clientSecret|anon_key|supabase_anon_key)\"\\s*:\\s*\"[^\"]*\""
+    )
+
+private val JWT_LIKE_VALUE =
+    Regex("eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+")
 
 private fun defaultHttpClient(): OkHttpClient =
     OkHttpClient.Builder()

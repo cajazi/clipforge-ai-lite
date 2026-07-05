@@ -51,7 +51,10 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onGoogleSignInCancelled() {
-        _ui.value = _ui.value.copy(isLoading = false)
+        _ui.value = _ui.value.copy(
+            isLoading = false,
+            error = "Google account selection cancelled."
+        )
     }
 
     fun onGoogleSignInFailed(message: String) {

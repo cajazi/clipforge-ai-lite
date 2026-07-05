@@ -22,6 +22,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Base64
 
 class AuthApiClientTest {
     @Test
@@ -245,7 +246,7 @@ class AuthApiClientTest {
         )
         val client = authClient(fake)
 
-        val result = client.signInWithGoogleIdToken("google.id.token", "nonce-value")
+        val result = client.signInWithGoogleIdToken(fakeGoogleJwt(aud = TEST_WEB_CLIENT_ID), "nonce-value")
 
         assertNull(result.error)
         val request = requireNotNull(fake.request)
@@ -258,8 +259,91 @@ class AuthApiClientTest {
 
         val json = Gson().fromJson(request.bodyAsString(), JsonObject::class.java)
         assertEquals("google", json.get("provider").asString)
-        assertEquals("google.id.token", json.get("id_token").asString)
+        assertEquals(fakeGoogleJwt(aud = TEST_WEB_CLIENT_ID), json.get("id_token").asString)
         assertEquals("nonce-value", json.get("nonce").asString)
+    }
+
+    @Test
+    fun googleIdTokenRequestOmitsBlankNonce() = runBlocking {
+        val fake = FakeCallFactory(
+            code = 200,
+            body = """{"access_token":"access","refresh_token":"refresh","user":{"id":"u1","email":"person@example.com"}}"""
+        )
+        val client = authClient(fake)
+
+        val result = client.signInWithGoogleIdToken(fakeGoogleJwt(aud = TEST_WEB_CLIENT_ID), " ")
+
+        assertNull(result.error)
+        val json = Gson().fromJson(requireNotNull(fake.request).bodyAsString(), JsonObject::class.java)
+        assertFalse(json.has("nonce"))
+    }
+
+    @Test
+    fun missingGoogleIdTokenIsMappedBeforeNetwork() = runBlocking {
+        val fake = FakeCallFactory()
+        val client = authClient(fake)
+
+        val result = client.signInWithGoogleIdToken("", "nonce-value")
+
+        assertEquals("Google ID token not returned.", result.error)
+        assertNull(fake.request)
+    }
+
+    @Test
+    fun googleIdTokenAudienceMismatchIsMappedBeforeNetwork() = runBlocking {
+        val fake = FakeCallFactory()
+        val client = authClient(fake)
+
+        val result = client.signInWithGoogleIdToken(
+            fakeGoogleJwt(aud = "android-client-id.apps.googleusercontent.com"),
+            "nonce-value"
+        )
+
+        assertEquals("OAuth client ID mismatch. Check Google Web Client ID setup.", result.error)
+        assertNull(fake.request)
+    }
+
+    @Test
+    fun googleIdTokenAudienceMatchWithAzpAllowsExchange() = runBlocking {
+        val fake = FakeCallFactory(
+            code = 200,
+            body = """{"access_token":"access","refresh_token":"refresh","user":{"id":"u1","email":"person@example.com"}}"""
+        )
+        val client = authClient(fake)
+
+        val result = client.signInWithGoogleIdToken(
+            fakeGoogleJwt(aud = TEST_WEB_CLIENT_ID, azp = "android-client-id.apps.googleusercontent.com"),
+            "nonce-value"
+        )
+
+        assertNull(result.error)
+        assertNotNull(fake.request)
+    }
+
+    @Test
+    fun supabaseGoogleIdTokenNonceRejectionIsMappedSafely() = runBlocking {
+        val fake = FakeCallFactory(
+            code = 400,
+            body = """{"error":"bad_jwt","msg":"nonce mismatch"}"""
+        )
+        val client = authClient(fake)
+
+        val result = client.signInWithGoogleIdToken(fakeGoogleJwt(aud = TEST_WEB_CLIENT_ID), "nonce-value")
+
+        assertEquals("Supabase rejected Google token: nonce verification failed.", result.error)
+    }
+
+    @Test
+    fun supabaseGoogleIdTokenAudienceRejectionIsMappedSafely() = runBlocking {
+        val client = authClient()
+
+        assertEquals(
+            "OAuth client ID mismatch. Check Google Web Client ID setup.",
+            client.parseGoogleIdTokenResponse(
+                """{"error":"bad_jwt","msg":"invalid audience in id token"}""",
+                400
+            ).error
+        )
     }
 
     @Test
@@ -271,6 +355,7 @@ class AuthApiClientTest {
         AuthApiClient(
             rawSupabaseUrl = TEST_URL,
             rawAnonKey = TEST_ANON_KEY,
+            expectedGoogleWebClientId = TEST_WEB_CLIENT_ID,
             callFactory = callFactory
         )
 
@@ -319,8 +404,24 @@ class AuthApiClientTest {
         override fun clone(): Call = FakeCall(request, code, body)
     }
 
+    private fun fakeGoogleJwt(aud: String, azp: String? = null): String {
+        val payload = mutableMapOf("aud" to aud)
+        azp?.let { payload["azp"] = it }
+        return listOf(
+            base64Url("""{"alg":"none"}"""),
+            base64Url(Gson().toJson(payload)),
+            "signature"
+        ).joinToString(".")
+    }
+
+    private fun base64Url(value: String): String =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(value.toByteArray(Charsets.UTF_8))
+
     private companion object {
         const val TEST_URL = "https://project.supabase.co"
         const val TEST_ANON_KEY = "test-anon-key"
+        const val TEST_WEB_CLIENT_ID = "1234567890-web.apps.googleusercontent.com"
     }
 }
