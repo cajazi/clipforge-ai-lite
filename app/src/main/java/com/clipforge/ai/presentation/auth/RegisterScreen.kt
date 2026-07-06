@@ -1,7 +1,5 @@
 package com.clipforge.ai.presentation.auth
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,7 +24,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.clipforge.ai.core.auth.GoogleCredentialResult
+import com.clipforge.ai.core.auth.GoogleCredentialSignInClient
 import com.clipforge.ai.core.designsystem.AppColors
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +38,8 @@ fun RegisterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val googleSignInClient = remember(context) { GoogleCredentialSignInClient(context) }
+    val scope = rememberCoroutineScope()
     var showPassword by remember { mutableStateOf(false) }
     var showConfirm  by remember { mutableStateOf(false) }
 
@@ -133,9 +136,17 @@ fun RegisterScreen(
             Spacer(Modifier.height(20.dp))
             AuthDivider()
             Spacer(Modifier.height(20.dp))
-            GoogleSignInButton(onClick = {
-                viewModel.getGoogleOAuthUrl()?.let { url ->
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            GoogleSignInButton(enabled = !uiState.isLoading, onClick = {
+                scope.launch {
+                    viewModel.onGoogleSignInStarted()
+                    when (val result = googleSignInClient.signIn()) {
+                        is GoogleCredentialResult.Success ->
+                            viewModel.loginWithGoogleIdToken(result.idToken, result.nonce)
+                        is GoogleCredentialResult.Cancelled ->
+                            viewModel.onGoogleSignInCancelled()
+                        is GoogleCredentialResult.Failure ->
+                            viewModel.onGoogleSignInFailed(result.message)
+                    }
                 }
             })
             Spacer(Modifier.height(28.dp))

@@ -22,7 +22,7 @@ class AuthRepositoryImpl(
     override suspend fun registerWithEmail(
         name: String, email: String, password: String
     ): RegisterResult = withContext(Dispatchers.IO) {
-        Log.d(TAG, "registerWithEmail: $email")
+        Log.d(TAG, "registerWithEmail requested")
         val r = api.signUp(email, password, name)
         when {
             r.error != null          -> RegisterResult.Failure(r.error)
@@ -39,7 +39,7 @@ class AuthRepositoryImpl(
     override suspend fun loginWithEmail(
         email: String, password: String
     ): NetworkResult<AuthUser> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "loginWithEmail: $email")
+        Log.d(TAG, "loginWithEmail requested")
         val r = api.signIn(email, password)
         when {
             r.error != null       -> NetworkResult.Error(message = r.error)
@@ -52,12 +52,23 @@ class AuthRepositoryImpl(
         }
     }
 
-    override suspend fun loginWithGoogle(): String =
-        withContext(Dispatchers.IO) {
-            val oauthStart = api.googleOAuthStart() ?: return@withContext ""
-            session.saveOAuthCodeVerifier(oauthStart.codeVerifier)
-            oauthStart.url
+    override suspend fun loginWithGoogleIdToken(
+        idToken: String,
+        nonce: String?
+    ): NetworkResult<AuthUser> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "loginWithGoogleIdToken requested")
+        val r = api.signInWithGoogleIdToken(idToken, nonce)
+        when {
+            r.error != null -> NetworkResult.Error(message = r.error)
+            r.accessToken != null && r.userId != null -> {
+                val user = r.toUser()
+                session.saveSession(user)
+                Log.d(TAG, "Google login success: ${user.email}")
+                NetworkResult.Success(user)
+            }
+            else -> NetworkResult.Error(message = "Google sign-in failed. Please try again.")
         }
+    }
 
     override suspend fun sendPasswordReset(email: String): NetworkResult<Unit> =
         withContext(Dispatchers.IO) {
@@ -70,12 +81,11 @@ class AuthRepositoryImpl(
 
     override suspend fun handleDeepLink(uri: Uri): NetworkResult<AuthUser> =
         withContext(Dispatchers.IO) {
-            Log.d(TAG, "handleDeepLink: $uri")
+            Log.d(TAG, "handleDeepLink: ${uri.safeAuthSummary()}")
             val raw = uri.fragment?.takeIf { it.isNotBlank() }
                 ?: uri.query?.takeIf { it.isNotBlank() }
                 ?: return@withContext NetworkResult.Error(message = "No token in callback")
 
-            Log.d(TAG, "Parsing: $raw")
             val params = raw.split("&").associate { p ->
                 val i = p.indexOf("=")
                 if (i > 0) p.substring(0, i) to
@@ -88,8 +98,11 @@ class AuthRepositoryImpl(
             val rt = params["refresh_token"] ?: ""
             val code = params["code"] ?: ""
             val error = params["error_description"] ?: params["error"]
-            Log.d(TAG, "access_token present: ${at.isNotBlank()}")
-            Log.d(TAG, "auth code present: ${code.isNotBlank()}")
+            Log.d(
+                TAG,
+                "callback fields accessToken=${at.isNotBlank()} refreshToken=${rt.isNotBlank()} " +
+                    "code=${code.isNotBlank()} error=${!error.isNullOrBlank()}"
+            )
 
             if (!error.isNullOrBlank()) {
                 session.clearOAuthCodeVerifier()
@@ -168,4 +181,11 @@ class AuthRepositoryImpl(
         accessToken  = accessToken  ?: "",
         refreshToken = refreshToken ?: ""
     )
+}
+
+private fun Uri.safeAuthSummary(): String {
+    val raw = fragment?.takeIf { it.isNotBlank() } ?: query.orEmpty()
+    return "scheme=$scheme host=$host accessToken=${raw.contains("access_token=")} " +
+        "refreshToken=${raw.contains("refresh_token=")} code=${raw.contains("code=")} " +
+        "error=${raw.contains("error=") || raw.contains("error_description=")}"
 }

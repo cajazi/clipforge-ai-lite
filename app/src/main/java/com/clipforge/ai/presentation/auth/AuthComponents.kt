@@ -2,6 +2,7 @@ package com.clipforge.ai.presentation.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,11 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.clipforge.ai.R
 import com.clipforge.ai.core.designsystem.AppColors
-import com.clipforge.ai.core.designsystem.AppSpacing
 
 @Composable
 fun PremiumButton(text: String, isLoading: Boolean, enabled: Boolean, onClick: () -> Unit) {
@@ -48,25 +50,25 @@ fun PremiumButton(text: String, isLoading: Boolean, enabled: Boolean, onClick: (
 }
 
 @Composable
-fun GoogleSignInButton(onClick: () -> Unit) {
+fun GoogleSignInButton(enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth().height(56.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(AppColors.Surface)
             .border(1.dp, AppColors.Border, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Google G
-            Box(modifier = Modifier.size(24.dp)
-                .background(AppColors.SurfaceVariant, RoundedCornerShape(6.dp)),
-                contentAlignment = Alignment.Center) {
-                Text("G", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppColors.OnBackground)
-            }
+            Image(
+                painter = painterResource(R.drawable.ic_google_g),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp)
+            )
             Text("Continue with Google", fontWeight = FontWeight.SemiBold,
-                color = AppColors.OnBackground, fontSize = 15.sp)
+                color = if (enabled) AppColors.OnBackground else AppColors.TextSecondary,
+                fontSize = 15.sp)
         }
     }
 }

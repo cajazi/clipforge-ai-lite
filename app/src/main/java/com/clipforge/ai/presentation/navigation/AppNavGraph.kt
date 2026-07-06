@@ -2,8 +2,14 @@ package com.clipforge.ai.presentation.navigation
 
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.*
 import androidx.navigation.compose.*
+import com.clipforge.ai.ClipForgeApp
+import com.clipforge.ai.core.auth.AuthState
 import com.clipforge.ai.presentation.auth.ForgotPasswordScreen
 import com.clipforge.ai.presentation.auth.LoginScreen
 import com.clipforge.ai.presentation.auth.RegisterScreen
@@ -27,6 +33,23 @@ private const val TAG = "AppNavGraph"
 
 @Composable
 fun AppNavGraph(navController: NavHostController) {
+    val app = LocalContext.current.applicationContext as ClipForgeApp
+    val authState by app.authManager.authState.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+
+    LaunchedEffect(authState, currentRoute) {
+        if (
+            authState is AuthState.LoggedIn &&
+            (currentRoute == Routes.LOGIN || currentRoute == Routes.REGISTER)
+        ) {
+            navController.navigate(Routes.HOME) {
+                popUpTo(Routes.LOGIN) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     NavHost(navController = navController, startDestination = Routes.SPLASH) {
 
         composable(Routes.SPLASH) {

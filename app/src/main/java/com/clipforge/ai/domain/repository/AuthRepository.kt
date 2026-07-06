@@ -13,7 +13,7 @@ sealed class RegisterResult {
 interface AuthRepository {
     suspend fun registerWithEmail(name: String, email: String, password: String): RegisterResult
     suspend fun loginWithEmail(email: String, password: String): NetworkResult<AuthUser>
-    suspend fun loginWithGoogle(): String          // returns OAuth URL
+    suspend fun loginWithGoogleIdToken(idToken: String, nonce: String?): NetworkResult<AuthUser>
     suspend fun handleDeepLink(uri: Uri): NetworkResult<AuthUser>
     suspend fun sendPasswordReset(email: String): NetworkResult<Unit>
     suspend fun logout(): NetworkResult<Unit>

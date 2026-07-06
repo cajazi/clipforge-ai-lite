@@ -17,6 +17,8 @@ media3            = "1.9.0"
 coil              = "2.7.0"
 playServicesAds   = "23.4.0"
 billingKtx        = "7.1.1"
+credentials       = "1.3.0"
+googleId          = "1.1.1"
 junit             = "4.13.2"
 junitAndroid      = "1.2.1"
 espresso          = "3.6.1"
@@ -57,6 +59,9 @@ androidx-media3-effect               = { group = "androidx.media3",            n
 coil-compose                         = { group = "io.coil-kt",                 name = "coil-compose",                version.ref = "coil" }
 play-services-ads                    = { group = "com.google.android.gms",     name = "play-services-ads",           version.ref = "playServicesAds" }
 billing-ktx                          = { group = "com.android.billingclient",  name = "billing-ktx",                 version.ref = "billingKtx" }
+androidx-credentials                 = { group = "androidx.credentials",       name = "credentials",                 version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials",    name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid                             = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleId" }
 junit                                = { group = "junit",                      name = "junit",                       version.ref = "junit" }
 androidx-junit                       = { group = "androidx.test.ext",          name = "junit",                       version.ref = "junitAndroid" }
 androidx-espresso-core               = { group = "androidx.test.espresso",     name = "espresso-core",               version.ref = "espresso" }

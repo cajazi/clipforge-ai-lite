@@ -12,6 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import com.clipforge.ai.core.network.NetworkResult
 import com.clipforge.ai.core.designsystem.AppColors
 import com.clipforge.ai.core.designsystem.ClipForgeTheme
 import com.clipforge.ai.presentation.navigation.AppNavGraph
@@ -43,9 +44,20 @@ class MainActivity : ComponentActivity() {
 
     private fun handleDeepLink(uri: Uri) {
         if (uri.scheme != "clipforgeai") return
-        Log.d(TAG, "Deep link received: $uri")
+        Log.d(TAG, "Deep link received: ${uri.safeAuthSummary()}")
         lifecycleScope.launch {
-            authManager.handleDeepLink(uri)
+            when (val result = authManager.handleDeepLink(uri)) {
+                is NetworkResult.Success -> Log.d(TAG, "Auth callback handled")
+                is NetworkResult.Error -> Log.w(TAG, "Auth callback failed: ${result.message}")
+                NetworkResult.Loading -> Unit
+            }
         }
     }
+}
+
+private fun Uri.safeAuthSummary(): String {
+    val raw = fragment?.takeIf { it.isNotBlank() } ?: query.orEmpty()
+    return "scheme=$scheme host=$host accessToken=${raw.contains("access_token=")} " +
+        "refreshToken=${raw.contains("refresh_token=")} code=${raw.contains("code=")} " +
+        "error=${raw.contains("error=") || raw.contains("error_description=")}"
 }
