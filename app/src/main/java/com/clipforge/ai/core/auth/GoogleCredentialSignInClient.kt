@@ -7,6 +7,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialCustomException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialInterruptedException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
@@ -40,7 +41,11 @@ class GoogleCredentialSignInClient(
             .addCredentialOption(signInOption)
             .build()
 
-        debug("native prompt requested clientIdConfigured=true noncePresent=true hashedNonceSent=true")
+        debug(
+            "native prompt requested clientIdConfigured=true " +
+                "clientIdEqualsExpected=${config.clientIdMatchesExpected} " +
+                "serverClientId=${config.webClientId} noncePresent=true hashedNonceSent=true"
+        )
         return try {
             val response = credentialManager.getCredential(
                 context = context,
@@ -54,7 +59,10 @@ class GoogleCredentialSignInClient(
             debugCredentialException(e)
             GoogleCredentialResult.Failure(credentialManagerFailureMessage(e))
         } catch (e: IllegalArgumentException) {
-            debug("credential exception class=${e.javaClass.simpleName} message=${e.message.orEmpty().take(160)}")
+            debug(
+                "credential exception class=${e.javaClass.simpleName} " +
+                    "message=${sanitizeCredentialDetail(e.message.orEmpty()).take(200)}"
+            )
             GoogleCredentialResult.Failure(
                 "Google Credential Manager setup failed: invalid sign-in request configuration."
             )
@@ -62,9 +70,12 @@ class GoogleCredentialSignInClient(
     }
 
     private fun debugCredentialException(e: GetCredentialException) {
+        val details = credentialExceptionDetails(e)
         debug(
             "credential exception class=${e.javaClass.simpleName} type=${e.type} " +
-                "message=${e.message.orEmpty().take(200)}"
+                "statusCode=${credentialStatusCode(details) ?: "none"} " +
+                "message=${sanitizeCredentialDetail(e.message.orEmpty()).take(200)} " +
+                "customData=${customExceptionData(e)}"
         )
     }
 
@@ -76,8 +87,10 @@ class GoogleCredentialSignInClient(
 // Maps Credential Manager failures to messages that identify the failing layer
 // (device account, Play services, Google Cloud OAuth config) without exposing tokens.
 internal fun credentialManagerFailureMessage(e: GetCredentialException): String {
-    val details = "${e.type} ${e.message.orEmpty()}".lowercase()
+    val details = credentialExceptionDetails(e).lowercase()
     return when {
+        details.contains("web client") && details.contains("missing") ->
+            GOOGLE_WEB_CLIENT_ID_MISSING_MESSAGE
         e is NoCredentialException || details.contains("no credential") ->
             "Google Credential Manager setup failed: no matching Google credential. " +
                 "Check the Android OAuth client (package name + SHA-1) and the device Google account."
@@ -87,10 +100,13 @@ internal fun credentialManagerFailureMessage(e: GetCredentialException): String 
         e is GetCredentialInterruptedException ->
             "Google sign-in was interrupted. Please try again."
         details.contains("developer console") ||
-            details.contains("developer error") ||
-            details.contains("28444") ||
+            details.contains("28444") ->
+            GOOGLE_CLOUD_PROJECT_CONFIG_MESSAGE
+        details.contains("developer error") ||
             details.contains("[10]") ||
-            details.contains("10:") ->
+            details.contains("10:") ||
+            details.contains("client id") ||
+            details.contains("client_id") ->
             "Google Credential Manager setup failed: OAuth client mismatch. " +
                 "Check the Google Cloud project configuration."
         details.contains("network") ->
@@ -128,20 +144,20 @@ internal fun parseGoogleCredentialResult(
         if (idTokenReceived) {
             GoogleCredentialResult.Success(idToken = idToken, nonce = nonce)
         } else {
-            GoogleCredentialResult.Failure("Google ID token not returned.")
+            GoogleCredentialResult.Failure(GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE)
         }
     } catch (e: GoogleIdTokenParsingException) {
         debug(
             "credential exception class=${e.javaClass.simpleName} " +
-                "message=${e.message.orEmpty().take(160)} idTokenReceived=false"
+                "message=${sanitizeCredentialDetail(e.message.orEmpty()).take(200)} idTokenReceived=false"
         )
-        GoogleCredentialResult.Failure("Google ID token not returned.")
+        GoogleCredentialResult.Failure(GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE)
     } catch (e: IllegalArgumentException) {
         debug(
             "credential exception class=${e.javaClass.simpleName} " +
-                "message=${e.message.orEmpty().take(160)} idTokenReceived=false"
+                "message=${sanitizeCredentialDetail(e.message.orEmpty()).take(200)} idTokenReceived=false"
         )
-        GoogleCredentialResult.Failure("Google ID token not returned.")
+        GoogleCredentialResult.Failure(GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE)
     }
 }
 
@@ -149,3 +165,31 @@ private val GOOGLE_ID_TOKEN_CREDENTIAL_TYPES = setOf(
     GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL,
     GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
 )
+
+internal fun credentialExceptionDetails(e: GetCredentialException): String =
+    "${e.type} ${e.message.orEmpty()}"
+
+internal fun credentialStatusCode(details: String): String? {
+    val match = CREDENTIAL_STATUS_CODE.find(details) ?: return null
+    return match.groupValues.drop(1).firstOrNull { it.isNotBlank() }
+}
+
+private fun customExceptionData(e: GetCredentialException): String {
+    if (e !is GetCredentialCustomException) return "none"
+    return "customType=${sanitizeCredentialDetail(e.type)} " +
+        "customMessage=${sanitizeCredentialDetail(e.message.orEmpty()).take(200)}"
+}
+
+private fun sanitizeCredentialDetail(value: String): String =
+    value.replace(CREDENTIAL_SENSITIVE_FIELD) { match ->
+        "${match.groupValues[1]}=<redacted>"
+    }.replace(CREDENTIAL_JWT_LIKE_VALUE, "<redacted-jwt>")
+
+private val CREDENTIAL_STATUS_CODE =
+    Regex("""(?i)(?:\[(-?\d+)]|\b(?:status(?:\s+code)?|statuscode|code)\s*[:=]\s*(-?\d+))""")
+
+private val CREDENTIAL_SENSITIVE_FIELD =
+    Regex("(?i)\\b(access_token|refresh_token|id_token|password|apikey|authorization|client_secret)\\s*[:=]\\s*\\S+")
+
+private val CREDENTIAL_JWT_LIKE_VALUE =
+    Regex("eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+")

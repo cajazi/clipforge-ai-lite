@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.clipforge.ai.ClipForgeApp
+import com.clipforge.ai.core.auth.GOOGLE_SIGN_IN_CANCELLED_MESSAGE
 import com.clipforge.ai.core.auth.RegisterState
 import com.clipforge.ai.core.network.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,7 +61,7 @@ class RegisterViewModel(application: Application) : AndroidViewModel(application
     fun onGoogleSignInCancelled() {
         _ui.value = _ui.value.copy(
             isLoading = false,
-            error = "Google account selection cancelled."
+            error = GOOGLE_SIGN_IN_CANCELLED_MESSAGE
         )
     }
 

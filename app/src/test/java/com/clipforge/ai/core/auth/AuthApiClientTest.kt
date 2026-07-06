@@ -76,10 +76,22 @@ class AuthApiClientTest {
         )
 
         val validation = GoogleSignInConfig.validate(
-            " 1234567890-abcdef.apps.googleusercontent.com "
+            " $EXPECTED_GOOGLE_WEB_CLIENT_ID "
         )
         assertTrue(validation.isValid)
-        assertEquals("1234567890-abcdef.apps.googleusercontent.com", validation.webClientId)
+        assertEquals(EXPECTED_GOOGLE_WEB_CLIENT_ID, validation.webClientId)
+        assertTrue(validation.clientIdMatchesExpected)
+    }
+
+    @Test
+    fun googleWebClientIdValidationRejectsEmbeddedWhitespaceMismatch() {
+        val validation = GoogleSignInConfig.validate(
+            "89347226051    9-l5b0acsci1qnr6orbem6cn00f0vaoofsg.apps.googleusercontent.com"
+        )
+
+        assertEquals(GOOGLE_WEB_CLIENT_ID_MALFORMED_MESSAGE, validation.error)
+        assertFalse(validation.clientIdMatchesExpected)
+        assertTrue(validation.clientIdMalformed)
     }
 
     @Test
@@ -285,7 +297,7 @@ class AuthApiClientTest {
 
         val result = client.signInWithGoogleIdToken("", "nonce-value")
 
-        assertEquals("Google ID token not returned.", result.error)
+        assertEquals(GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE, result.error)
         assertNull(fake.request)
     }
 

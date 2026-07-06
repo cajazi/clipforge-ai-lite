@@ -93,7 +93,7 @@ class AuthApiClient(
         withContext(Dispatchers.IO) {
             configError()?.let { return@withContext it }
             if (idToken.isBlank()) {
-                return@withContext AuthResult(error = "Google ID token not returned.")
+                return@withContext AuthResult(error = GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE)
             }
             val expectedAudience = expectedGoogleWebClientId.trim()
             val audience = GoogleIdTokenDiagnostics.inspect(idToken, expectedAudience)

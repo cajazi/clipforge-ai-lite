@@ -104,7 +104,7 @@ class GoogleCredentialSignInClientTest {
     }
 
     @Test
-    fun developerConsoleErrorMapsToOAuthClientMismatch() {
+    fun developerConsoleErrorMapsToGoogleCloudProjectConfiguration() {
         val message = credentialManagerFailureMessage(
             GetCredentialCustomException(
                 "androidx.credentials.TYPE_GET_CREDENTIAL_CUSTOM_EXCEPTION",
@@ -113,9 +113,12 @@ class GoogleCredentialSignInClientTest {
         )
 
         assertEquals(
-            "Google Credential Manager setup failed: OAuth client mismatch. " +
-                "Check the Google Cloud project configuration.",
+            GOOGLE_CLOUD_PROJECT_CONFIG_MESSAGE,
             message
+        )
+        assertEquals(
+            "28444",
+            credentialStatusCode("[28444] Developer console is not set up correctly.")
         )
     }
 
@@ -144,7 +147,7 @@ class GoogleCredentialSignInClientTest {
         val result = parseGoogleCredentialResult(credential, "raw-nonce")
 
         assertEquals(
-            GoogleCredentialResult.Failure("Google ID token not returned."),
+            GoogleCredentialResult.Failure(GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE),
             result
         )
     }
