@@ -52,7 +52,7 @@ class AuthApiClientTest {
         )
         assertEquals(
             SUPABASE_MALFORMED_URL_MESSAGE,
-            SupabaseConfigValidator.validate("http://project.supabase.co", "anon-key").error
+            SupabaseConfigValidator.validate("project.supabase.co", "anon-key").error
         )
         assertEquals(
             SUPABASE_MALFORMED_URL_MESSAGE,
@@ -62,6 +62,34 @@ class AuthApiClientTest {
             SUPABASE_MALFORMED_KEY_MESSAGE,
             SupabaseConfigValidator.validate("https://project.supabase.co", "PASTE_ANON_KEY_HERE").error
         )
+    }
+
+    @Test
+    fun httpSupabaseUrlIsAcceptedWhenSchemeIsExplicit() {
+        val validation = SupabaseConfigValidator.validate(
+            rawUrl = " http://localhost:54321/ ",
+            rawAnonKey = " anon-key "
+        )
+
+        assertTrue(validation.isValid)
+        assertEquals("http://localhost:54321", validation.normalizedUrl)
+        assertEquals("http://localhost:54321/rest/v1/", validation.restBaseUrl)
+    }
+
+    @Test
+    fun missingSupabaseConfigReturnsSafeAuthErrorBeforeNetwork() = runBlocking {
+        val fake = FakeCallFactory()
+        val client = AuthApiClient(
+            rawSupabaseUrl = "",
+            rawAnonKey = "",
+            expectedGoogleWebClientId = TEST_WEB_CLIENT_ID,
+            callFactory = fake
+        )
+
+        val result = client.signIn("person@example.com", "password")
+
+        assertEquals(SUPABASE_MISSING_CONFIG_MESSAGE, result.error)
+        assertNull(fake.request)
     }
 
     @Test

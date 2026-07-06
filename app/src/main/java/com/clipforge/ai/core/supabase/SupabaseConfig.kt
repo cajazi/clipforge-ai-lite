@@ -42,6 +42,8 @@ object SupabaseConfig {
 
     fun authHost(): String? = validation.host
 
+    internal fun currentValidation(): SupabaseConfigValidation = validation
+
     const val ADMIN_EMAIL       = "cossybest24@gmail.com"
     const val BUCKET_MEDIA      = "project-media"
     const val BUCKET_AUDIO      = "project-audio"
