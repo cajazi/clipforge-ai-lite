@@ -17,7 +17,7 @@ const val GOOGLE_SIGN_IN_CANCELLED_MESSAGE = "Google sign-in cancelled."
 const val GOOGLE_ID_TOKEN_NOT_RETURNED_MESSAGE = "Google ID token was not returned."
 
 const val EXPECTED_GOOGLE_WEB_CLIENT_ID =
-    "893472260519-l5b0acsci1qnr6orbem6cn00f0vaoofsg.apps.googleusercontent.com"
+    "893472260519-smdknd6rldg2bg6df014s61mqh7unf6j.apps.googleusercontent.com"
 
 data class GoogleSignInConfigValidation(
     val webClientId: String,
