@@ -33,9 +33,12 @@ object GoogleSignInConfig {
 
         if (BuildConfig.DEBUG) {
             runCatching {
+                // Web client ID is public (not a secret); logging it in debug builds is safe
+                // and lets us verify the installed BuildConfig value on-device.
                 Log.d(
                     TAG,
-                    "clientIdBlank=$clientIdBlank clientIdMalformed=$clientIdMalformed"
+                    "clientIdBlank=$clientIdBlank clientIdMalformed=$clientIdMalformed " +
+                        "webClientId=${webClientId.ifBlank { "<blank>" }}"
                 )
             }
         }

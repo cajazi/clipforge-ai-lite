@@ -8,6 +8,9 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.GetCredentialInterruptedException
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.clipforge.ai.BuildConfig
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -45,19 +48,55 @@ class GoogleCredentialSignInClient(
             )
             parseGoogleCredentialResult(response.credential, nonce.raw, ::debug)
         } catch (e: GetCredentialCancellationException) {
-            debug("credential exception class=${e.javaClass.simpleName} message=${e.message.orEmpty().take(160)}")
+            debugCredentialException(e)
             GoogleCredentialResult.Cancelled
         } catch (e: GetCredentialException) {
-            debug("credential exception class=${e.javaClass.simpleName} message=${e.message.orEmpty().take(160)}")
-            GoogleCredentialResult.Failure("Google Credential Manager setup failed.")
+            debugCredentialException(e)
+            GoogleCredentialResult.Failure(credentialManagerFailureMessage(e))
         } catch (e: IllegalArgumentException) {
             debug("credential exception class=${e.javaClass.simpleName} message=${e.message.orEmpty().take(160)}")
-            GoogleCredentialResult.Failure("Google Credential Manager setup failed.")
+            GoogleCredentialResult.Failure(
+                "Google Credential Manager setup failed: invalid sign-in request configuration."
+            )
         }
+    }
+
+    private fun debugCredentialException(e: GetCredentialException) {
+        debug(
+            "credential exception class=${e.javaClass.simpleName} type=${e.type} " +
+                "message=${e.message.orEmpty().take(200)}"
+        )
     }
 
     private fun debug(message: String) {
         if (BuildConfig.DEBUG) runCatching { Log.d(GOOGLE_SIGN_IN_TAG, message) }
+    }
+}
+
+// Maps Credential Manager failures to messages that identify the failing layer
+// (device account, Play services, Google Cloud OAuth config) without exposing tokens.
+internal fun credentialManagerFailureMessage(e: GetCredentialException): String {
+    val details = "${e.type} ${e.message.orEmpty()}".lowercase()
+    return when {
+        e is NoCredentialException || details.contains("no credential") ->
+            "Google Credential Manager setup failed: no matching Google credential. " +
+                "Check the Android OAuth client (package name + SHA-1) and the device Google account."
+        e is GetCredentialProviderConfigurationException ->
+            "Google Credential Manager setup failed: Google Play services credential provider " +
+                "is unavailable or out of date on this device."
+        e is GetCredentialInterruptedException ->
+            "Google sign-in was interrupted. Please try again."
+        details.contains("developer console") ||
+            details.contains("developer error") ||
+            details.contains("28444") ||
+            details.contains("[10]") ||
+            details.contains("10:") ->
+            "Google Credential Manager setup failed: OAuth client mismatch. " +
+                "Check the Google Cloud project configuration."
+        details.contains("network") ->
+            "Google Credential Manager setup failed: network error while contacting Google."
+        else ->
+            "Google Credential Manager setup failed. (${e.javaClass.simpleName})"
     }
 }
 
@@ -74,7 +113,9 @@ internal fun parseGoogleCredentialResult(
         credentialType !in GOOGLE_ID_TOKEN_CREDENTIAL_TYPES
     ) {
         debug("credential result idTokenReceived=false type=$credentialType class=$credentialClass")
-        return GoogleCredentialResult.Failure("Google Credential Manager setup failed.")
+        return GoogleCredentialResult.Failure(
+            "Google Credential Manager setup failed: unexpected credential type."
+        )
     }
 
     return try {

@@ -2,6 +2,10 @@ package com.clipforge.ai.core.auth
 
 import android.os.Bundle
 import androidx.credentials.CustomCredential
+import androidx.credentials.exceptions.GetCredentialCustomException
+import androidx.credentials.exceptions.GetCredentialInterruptedException
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -64,8 +68,66 @@ class GoogleCredentialSignInClientTest {
         val result = parseGoogleCredentialResult(credential, "raw-nonce")
 
         assertEquals(
-            GoogleCredentialResult.Failure("Google Credential Manager setup failed."),
+            GoogleCredentialResult.Failure(
+                "Google Credential Manager setup failed: unexpected credential type."
+            ),
             result
+        )
+    }
+
+    @Test
+    fun noCredentialExceptionMapsToOAuthClientAndAccountGuidance() {
+        val message = credentialManagerFailureMessage(
+            NoCredentialException("No credentials available")
+        )
+
+        assertTrue(message.startsWith("Google Credential Manager setup failed: no matching Google credential."))
+        assertTrue(message.contains("SHA-1"))
+    }
+
+    @Test
+    fun providerConfigurationExceptionMapsToPlayServicesGuidance() {
+        val message = credentialManagerFailureMessage(
+            GetCredentialProviderConfigurationException("provider missing")
+        )
+
+        assertTrue(message.contains("Google Play services credential provider"))
+    }
+
+    @Test
+    fun interruptedExceptionMapsToRetryMessage() {
+        val message = credentialManagerFailureMessage(
+            GetCredentialInterruptedException("interrupted")
+        )
+
+        assertEquals("Google sign-in was interrupted. Please try again.", message)
+    }
+
+    @Test
+    fun developerConsoleErrorMapsToOAuthClientMismatch() {
+        val message = credentialManagerFailureMessage(
+            GetCredentialCustomException(
+                "androidx.credentials.TYPE_GET_CREDENTIAL_CUSTOM_EXCEPTION",
+                "[28444] Developer console is not set up correctly."
+            )
+        )
+
+        assertEquals(
+            "Google Credential Manager setup failed: OAuth client mismatch. " +
+                "Check the Google Cloud project configuration.",
+            message
+        )
+    }
+
+    @Test
+    fun unknownCredentialExceptionKeepsGenericMessageWithExceptionClass() {
+        val message = credentialManagerFailureMessage(
+            GetCredentialCustomException("custom-type", "something else")
+        )
+
+        assertEquals(
+            "Google Credential Manager setup failed. (GetCredentialCustomException)",
+            message
         )
     }
 
