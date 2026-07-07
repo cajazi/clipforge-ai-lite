@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -185,7 +186,8 @@ fun TimelineScreen(
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showVolumeSheet by remember { mutableStateOf(false) }
     var showTransformSheet by remember { mutableStateOf(false) }
-    var showTextSheet by remember { mutableStateOf(false) }
+    var textToolState by remember { mutableStateOf(TextToolUiState()) }
+    var pendingTextOverlaySelectionId by remember { mutableStateOf<String?>(null) }
     var showEffectCatalogSheet by rememberSaveable { mutableStateOf(false) }
     var selectedAnimationCategory by rememberSaveable { mutableStateOf(AnimationPickerCategory.BASIC) }
     var animationPreviewRestartKey by remember { mutableLongStateOf(0L) }
@@ -207,6 +209,20 @@ fun TimelineScreen(
     val timelineTextOverlays by remember(projectId, textOverlayRepository) {
         textOverlayRepository.observeTextOverlaysForProject(projectId)
     }.collectAsState(initial = emptyList<TextOverlay>())
+    val nextTextOverlayZIndex = remember(timelineTextOverlays) {
+        (timelineTextOverlays.maxOfOrNull { overlay -> overlay.zIndex } ?: -1) + 1
+    }
+    val draftTextOverlay = remember(projectId, textToolState, uiState.totalDurationMs, nextTextOverlayZIndex) {
+        createDraftTextOverlay(
+            projectId = projectId,
+            state = textToolState,
+            totalDurationMs = uiState.totalDurationMs,
+            zIndex = nextTextOverlayZIndex
+        )
+    }
+    val previewTextOverlays = remember(timelineTextOverlays, draftTextOverlay) {
+        if (draftTextOverlay == null) timelineTextOverlays else timelineTextOverlays + draftTextOverlay
+    }
     val clipAnimationViewModel = remember(projectId, effectRepository, historyRegistry) {
         ClipAnimationViewModel(
             projectId = projectId,
@@ -292,6 +308,36 @@ fun TimelineScreen(
         )
     }
     val screenScope = rememberCoroutineScope()
+    fun openTextToolRow() {
+        showEffectCatalogSheet = false
+        comingSoonTool = null
+        placeholderTool = null
+        textToolState = textToolState.openRow()
+    }
+    fun openTextComposer() {
+        showEffectCatalogSheet = false
+        comingSoonTool = null
+        placeholderTool = null
+        textToolState = textToolState.openComposer(uiState.globalProjectTimeMs)
+    }
+    fun commitTextComposer() {
+        val overlay = createCommittedTextOverlay(
+            projectId = projectId,
+            state = textToolState,
+            totalDurationMs = uiState.totalDurationMs,
+            zIndex = nextTextOverlayZIndex
+        ) ?: return
+        screenScope.launch {
+            historyRegistry.execute(
+                AddTextOverlayCommand(
+                    repository = textOverlayRepository,
+                    textOverlay = overlay
+                )
+            )
+            pendingTextOverlaySelectionId = overlay.id
+        }
+        textToolState = textToolState.afterCommit()
+    }
 
     SideEffect {
         screenRecompositionCount++
@@ -353,6 +399,13 @@ fun TimelineScreen(
                 if (shouldClearStaleSelectedTextOverlay(target, timelineTextOverlays)) selectionController.clear()
             }
             SelectionTarget.None -> Unit
+        }
+    }
+    LaunchedEffect(timelineTextOverlays, pendingTextOverlaySelectionId) {
+        val pendingId = pendingTextOverlaySelectionId ?: return@LaunchedEffect
+        if (timelineTextOverlays.any { it.id == pendingId }) {
+            selectionController.restore(SelectionTarget.TextOverlay(pendingId).toSnapshot())
+            pendingTextOverlaySelectionId = null
         }
     }
     LaunchedEffect(viewModel) {
@@ -432,32 +485,6 @@ fun TimelineScreen(
             onDismiss = { showTransformSheet = false }
         )
     }
-    if (showTextSheet) {
-        TextOverlaySheet(
-            onApply = {
-                val plan = planDefaultTimelineTextOverlayCreation(
-                    projectId = projectId,
-                    text = it,
-                    timelineStartMs = uiState.globalProjectTimeMs,
-                    totalDurationMs = uiState.totalDurationMs,
-                    zIndex = (timelineTextOverlays.maxOfOrNull { overlay -> overlay.zIndex } ?: -1) + 1
-                )
-                plan.overlay?.let { overlay ->
-                    screenScope.launch {
-                        historyRegistry.execute(
-                            AddTextOverlayCommand(
-                                repository = textOverlayRepository,
-                                textOverlay = overlay
-                            )
-                        )
-                    }
-                }
-                showTextSheet = false
-            },
-            onDismiss = { showTextSheet = false }
-        )
-    }
-
     Scaffold(
         topBar = { CapCutEditorTopBar(onBack = onBack, onExport = onExport) },
         bottomBar = {
@@ -479,7 +506,7 @@ fun TimelineScreen(
                     SCREEN_TAG,
                     "SPLIT_BUTTON_ENABLED_STATE enabled=$splitButtonEnabled candidateClipId=${splitCandidateClip?.id} selectedClipId=${uiState.selectedClipId} " +
                         "playheadMs=${uiState.globalProjectTimeMs} playheadInsideClip=$playheadInsideClip " +
-                        "blockingModal=${showSpeedSheet || showVolumeSheet || showTransformSheet || showTextSheet || clipAnimationTransientState.panelOpen || comingSoonTool != null || placeholderTool != null}"
+                        "blockingModal=${showSpeedSheet || showVolumeSheet || showTransformSheet || textToolState.panel == TextToolPanel.Composer || clipAnimationTransientState.panelOpen || comingSoonTool != null || placeholderTool != null}"
                 )
             }
             if (effectActionBarState.visible) {
@@ -582,6 +609,21 @@ fun TimelineScreen(
                     },
                     modifier = Modifier.navigationBarsPadding()
                 )
+            } else if (textToolState.panel == TextToolPanel.Composer) {
+                TextComposerPanel(
+                    state = textToolState,
+                    onDraftChange = { textToolState = textToolState.updateDraftText(it) },
+                    onConfirm = ::commitTextComposer,
+                    onBack = { textToolState = textToolState.openRow() },
+                    onClose = { textToolState = textToolState.closeTool() },
+                    modifier = Modifier.navigationBarsPadding()
+                )
+            } else if (textToolState.panel == TextToolPanel.Row) {
+                TextToolRow(
+                    onBack = { textToolState = textToolState.closeTool() },
+                    onAddText = ::openTextComposer,
+                    modifier = Modifier.navigationBarsPadding()
+                )
             } else {
                 TimelineToolbar(
                     toolbarMode = uiState.toolbarMode,
@@ -592,7 +634,7 @@ fun TimelineScreen(
                         when (label) {
                             "Edit" -> viewModel.onPrimaryToolClicked(label)
                             "Audio" -> onAddMusic?.invoke() ?: launchAudioPicker()
-                            "Text" -> onAddText?.invoke() ?: run { showTextSheet = true }
+                            "Text" -> openTextToolRow()
                             "Effects" -> showEffectCatalogSheet = true
                             "Overlay" -> onAddOverlay?.invoke() ?: launchVisualPicker()
                             else -> comingSoonTool = label
@@ -633,7 +675,7 @@ fun TimelineScreen(
                 CapCutPreviewArea(
                     projectId = projectId,
                     clips = uiState.clips,
-                    textOverlays = timelineTextOverlays,
+                    textOverlays = previewTextOverlays,
                     clip = uiState.clips.firstOrNull { it.id == uiState.currentSegment?.clipId }
                         ?: uiState.selectedClipId?.let { selectedId -> uiState.clips.firstOrNull { it.id == selectedId } }
                         ?: uiState.clips.firstOrNull(),
@@ -705,7 +747,7 @@ fun TimelineScreen(
                         selectionController.restore(SelectionTarget.TextOverlay(textOverlayId).toSnapshot())
                     },
                     onAddMusic = { onAddMusic?.invoke() ?: launchAudioPicker() },
-                    onAddText = { onAddText?.invoke() ?: run { showTextSheet = true } },
+                    onAddText = ::openTextComposer,
                     audioTrackCount = uiState.audioTrackCount,
                     textTrackCount = uiState.textTrackCount,
                     overlayTrackCount = uiState.overlayTrackCount,
@@ -4071,6 +4113,210 @@ private fun TimelineToolbarButton(tool: TimelineToolbarTool) {
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun TextToolRow(
+    onBack: () -> Unit,
+    onAddText: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .zIndex(50f)
+            .testTag("text-tool-row"),
+        color = Color(0xFF0F0F14),
+        tonalElevation = 4.dp
+    ) {
+        val tools = textToolRowActions.map { action ->
+            TimelineToolbarTool(
+                label = action.label,
+                icon = action.icon,
+                enabled = action.enabled,
+                onClick = when (action.label) {
+                    "Back" -> onBack
+                    "Add text" -> onAddText
+                    else -> null
+                }
+            )
+        }
+        TimelineToolLazyRow(
+            tools = tools,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(76.dp)
+        )
+    }
+}
+
+@Composable
+private fun TextComposerPanel(
+    state: TextToolUiState,
+    onDraftChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .zIndex(50f)
+            .testTag("text-composer-panel"),
+        color = Color(0xFF1A1A1E),
+        tonalElevation = 6.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(302.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF2A2A30))
+                ) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back to text tools", tint = Color.White)
+                }
+                OutlinedTextField(
+                    value = state.draftText,
+                    onValueChange = onDraftChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                        .testTag("text-composer-input"),
+                    placeholder = { Text("Enter text", color = AppColors.TextSecondary, fontSize = 13.sp) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = AppColors.Primary,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedContainerColor = Color(0xFF2B2B30),
+                        unfocusedContainerColor = Color(0xFF2B2B30)
+                    )
+                )
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close text composer", tint = AppColors.TextSecondary)
+                }
+                IconButton(
+                    onClick = onConfirm,
+                    enabled = state.confirmEnabled,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (state.confirmEnabled) AppColors.Primary else Color(0xFF303036))
+                        .testTag("text-composer-confirm")
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Confirm text",
+                        tint = if (state.confirmEnabled) Color.Black else AppColors.TextSecondary
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                textComposerTabs.forEachIndexed { index, tab ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            tab,
+                            color = if (index == 0) Color.White else AppColors.TextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Box(
+                            Modifier
+                                .width(30.dp)
+                                .height(2.dp)
+                                .background(
+                                    if (index == 0) AppColors.Primary else Color.Transparent,
+                                    RoundedCornerShape(1.dp)
+                                )
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("Templates", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                textTemplateShellItems.chunked(4).forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowItems.forEach { item ->
+                            TextTemplateShellTile(
+                                label = item,
+                                selected = item == "Default",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        repeat(4 - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextTemplateShellTile(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(54.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(Color(0xFF25252B))
+            .border(
+                width = if (selected) 1.dp else 0.dp,
+                color = if (selected) Color.White else Color.Transparent,
+                shape = RoundedCornerShape(7.dp)
+            )
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
         )
     }
 }

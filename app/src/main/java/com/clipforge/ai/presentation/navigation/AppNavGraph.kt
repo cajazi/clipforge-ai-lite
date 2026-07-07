@@ -105,7 +105,6 @@ fun AppNavGraph(navController: NavHostController) {
             TimelineScreen(
                 projectId      = id,
                 onBack         = { navController.popBackStack() },
-                onAddText      = { navController.navigate(Routes.textOverlay(id)) },
                 onExport       = { navController.navigate(Routes.exportProgress(id)) { launchSingleTop = true } },
                 onAddMusic     = { navController.navigate(Routes.music(id)) },
                 onAddOverlay   = { navController.navigate(Routes.overlays(id)) },
@@ -128,7 +127,6 @@ fun AppNavGraph(navController: NavHostController) {
             TimelineScreen(
                 projectId      = id,
                 onBack         = { navController.popBackStack() },
-                onAddText      = { navController.navigate(Routes.textOverlay(id)) },
                 onExport       = { navController.navigate(Routes.exportProgress(id)) { launchSingleTop = true } },
                 onAddMusic     = { navController.navigate(Routes.music(id)) },
                 onAddOverlay   = { navController.navigate(Routes.overlays(id)) },

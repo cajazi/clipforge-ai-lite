@@ -1,0 +1,172 @@
+package com.clipforge.ai.presentation.timeline
+
+import com.clipforge.ai.domain.history.AddTextOverlayCommand
+import com.clipforge.ai.domain.history.HistoryRegistry
+import com.clipforge.ai.domain.model.TextOverlay
+import com.clipforge.ai.domain.repository.TextOverlayRepository
+import com.clipforge.ai.domain.selection.SelectionController
+import com.clipforge.ai.domain.selection.SelectionTarget
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TextToolUiStateTest {
+
+    @Test
+    fun `text toolbar opens from primary text tap and back returns to main toolbar`() {
+        val state = TextToolUiState().openRow()
+
+        assertEquals(TextToolPanel.Row, state.panel)
+        assertEquals(TextToolPanel.Hidden, state.closeTool().panel)
+    }
+
+    @Test
+    fun `add text action opens composer at playhead`() {
+        val state = TextToolUiState().openRow().openComposer(startMs = 1_250L)
+
+        assertEquals(TextToolPanel.Composer, state.panel)
+        assertEquals(1_250L, state.draftStartMs)
+        assertFalse(state.confirmEnabled)
+    }
+
+    @Test
+    fun `typed draft enables confirm and creates preview-only overlay`() {
+        val state = TextToolUiState()
+            .openComposer(startMs = 2_000L)
+            .updateDraftText("  Hello  ")
+
+        val draft = createDraftTextOverlay(
+            projectId = PROJECT_ID,
+            state = state,
+            totalDurationMs = 10_000L,
+            zIndex = 4
+        )
+
+        assertTrue(state.confirmEnabled)
+        assertNotNull(draft)
+        requireNotNull(draft)
+        assertEquals(TEXT_TOOL_DRAFT_OVERLAY_ID, draft.id)
+        assertEquals("Hello", draft.renderSpec.text)
+        assertEquals(2_000L, draft.windowStartMs)
+        assertEquals(4, draft.zIndex)
+    }
+
+    @Test
+    fun `blank draft does not create preview or committed overlay`() {
+        val state = TextToolUiState()
+            .openComposer(startMs = 0L)
+            .updateDraftText("   ")
+
+        assertNull(createDraftTextOverlay(PROJECT_ID, state, totalDurationMs = 10_000L, zIndex = 0))
+        assertNull(createCommittedTextOverlay(PROJECT_ID, state, totalDurationMs = 10_000L, zIndex = 0))
+    }
+
+    @Test
+    fun `committed overlay uses real generated id instead of draft id`() {
+        val state = TextToolUiState()
+            .openComposer(startMs = 500L)
+            .updateDraftText("Title")
+
+        val overlay = createCommittedTextOverlay(
+            projectId = PROJECT_ID,
+            state = state,
+            totalDurationMs = 4_000L,
+            zIndex = 2
+        )
+
+        assertNotNull(overlay)
+        requireNotNull(overlay)
+        assertNotEquals(TEXT_TOOL_DRAFT_OVERLAY_ID, overlay.id)
+        assertEquals("Title", overlay.renderSpec.text)
+        assertEquals(500L, overlay.windowStartMs)
+        assertEquals(2, overlay.zIndex)
+    }
+
+    @Test
+    fun `after commit returns to text row and clears draft`() {
+        val state = TextToolUiState()
+            .openComposer(startMs = 500L)
+            .updateDraftText("Title")
+            .afterCommit()
+
+        assertEquals(TextToolPanel.Row, state.panel)
+        assertEquals("", state.draftText)
+        assertFalse(state.confirmEnabled)
+    }
+
+    @Test
+    fun `disabled text row items stay disabled and only add text is functional`() {
+        val enabled = textToolRowActions.filter { it.enabled }.map { it.label }
+        val disabled = textToolRowActions.filterNot { it.enabled }.map { it.label }
+
+        assertEquals(listOf("Back", "Add text"), enabled)
+        assertTrue(disabled.containsAll(listOf("Auto Captions", "Stickers", "Draw", "Text template", "Text to audio", "Auto lyrics")))
+    }
+
+    @Test
+    fun `commit path adds lane overlay selects it and undo redo keeps one row`() = runBlocking {
+        val state = TextToolUiState()
+            .openComposer(startMs = 1_000L)
+            .updateDraftText("Caption")
+        val overlay = requireNotNull(
+            createCommittedTextOverlay(
+                projectId = PROJECT_ID,
+                state = state,
+                totalDurationMs = 10_000L,
+                zIndex = 0
+            )
+        )
+        val repository = FakeTextOverlayRepository()
+        val registry = HistoryRegistry()
+        val selectionController = SelectionController()
+
+        registry.execute(AddTextOverlayCommand(repository, overlay))
+        selectionController.restore(SelectionTarget.TextOverlay(overlay.id).toSnapshot())
+
+        assertEquals(listOf(overlay), repository.getTextOverlaysForProject(PROJECT_ID))
+        assertEquals(overlay.id, selectedTextOverlayId(selectionController.current))
+
+        registry.undo()
+        assertEquals(emptyList<TextOverlay>(), repository.getTextOverlaysForProject(PROJECT_ID))
+
+        registry.redo()
+        assertEquals(listOf(overlay), repository.getTextOverlaysForProject(PROJECT_ID))
+    }
+
+    private class FakeTextOverlayRepository : TextOverlayRepository {
+        private val rows = MutableStateFlow(emptyList<TextOverlay>())
+
+        override suspend fun getTextOverlaysForProject(projectId: String): List<TextOverlay> =
+            rows.value.filter { it.projectId == projectId }
+
+        override fun observeTextOverlaysForProject(projectId: String): Flow<List<TextOverlay>> =
+            rows
+
+        override suspend fun upsertTextOverlay(textOverlay: TextOverlay) {
+            rows.value = rows.value.filterNot { it.id == textOverlay.id } + textOverlay
+        }
+
+        override suspend fun upsertTextOverlays(textOverlays: List<TextOverlay>) {
+            rows.value = rows.value.filterNot { row -> textOverlays.any { it.id == row.id } } + textOverlays
+        }
+
+        override suspend fun deleteTextOverlay(id: String) {
+            rows.value = rows.value.filterNot { it.id == id }
+        }
+
+        override suspend fun deleteTextOverlaysForProject(projectId: String) {
+            rows.value = rows.value.filterNot { it.projectId == projectId }
+        }
+    }
+
+    private companion object {
+        const val PROJECT_ID = "project"
+    }
+}
