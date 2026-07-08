@@ -2,7 +2,6 @@ package com.clipforge.ai.presentation.timeline
 
 import android.graphics.Color
 import com.clipforge.ai.core.overlay.OverlayLayer
-import com.clipforge.ai.core.overlay.OverlayTransform
 import com.clipforge.ai.core.text.TextAlignment
 import com.clipforge.ai.core.text.TextRenderSpec
 import com.clipforge.ai.domain.model.TextOverlay
@@ -64,13 +63,7 @@ fun createDefaultTimelineTextOverlay(
         windowEndMs = endMs,
         layer = OverlayLayer.USER,
         zIndex = zIndex,
-        transform = OverlayTransform(
-            xNorm = 0.5f,
-            yNorm = 0.5f,
-            scale = 1f,
-            rotationDeg = 0f,
-            alpha = 1f
-        ),
+        transform = DefaultTextOverlayTransform,
         renderSpec = TextRenderSpec(
             text = clean,
             fontId = "default",
