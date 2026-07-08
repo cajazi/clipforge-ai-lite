@@ -96,6 +96,43 @@ class PreviewOverlayHostTest {
         assertEquals(0L, timelineMsToUs(-10L))
     }
 
+    @Test
+    fun `drag delta converts to normalized text overlay position`() {
+        val moved = moveTextOverlayTransformByPreviewDelta(
+            transform = OverlayTransform(
+                xNorm = 0.5f,
+                yNorm = 0.5f,
+                scale = 1f,
+                rotationDeg = 0f,
+                alpha = 1f
+            ),
+            deltaXPx = 100f,
+            deltaYPx = -80f,
+            frameWidthPx = 1_000,
+            frameHeightPx = 2_000
+        )
+
+        assertEquals(0.6f, moved.xNorm, EPSILON)
+        assertEquals(0.46f, moved.yNorm, EPSILON)
+        assertEquals(1f, moved.scale, EPSILON)
+        assertEquals(0f, moved.rotationDeg, EPSILON)
+        assertEquals(1f, moved.alpha, EPSILON)
+    }
+
+    @Test
+    fun `drag delta clamps text overlay position within preview`() {
+        val moved = moveTextOverlayTransformByPreviewDelta(
+            transform = DefaultTextOverlayTransform,
+            deltaXPx = 2_000f,
+            deltaYPx = -2_000f,
+            frameWidthPx = 1_000,
+            frameHeightPx = 2_000
+        )
+
+        assertEquals(1f, moved.xNorm, EPSILON)
+        assertEquals(0f, moved.yNorm, EPSILON)
+    }
+
     private object NoopRasterizer : TextOverlayRasterizer {
         override fun rasterize(spec: TextRenderSpec, frameW: Int, frameH: Int): Bitmap =
             throw UnsupportedOperationException("Preview host unit tests do not rasterize")

@@ -1,5 +1,6 @@
 package com.clipforge.ai.presentation.timeline
 
+import com.clipforge.ai.core.overlay.OverlayTransform
 import com.clipforge.ai.domain.history.AddTextOverlayCommand
 import com.clipforge.ai.domain.history.HistoryRegistry
 import com.clipforge.ai.domain.model.TextOverlay
@@ -34,6 +35,7 @@ class TextToolUiStateTest {
         assertEquals(TextToolPanel.Composer, state.panel)
         assertEquals(1_250L, state.draftStartMs)
         assertEquals(OVERLAY_ID, state.draftOverlayId)
+        assertEquals(DefaultTextOverlayTransform, state.draftTransform)
         assertFalse(state.confirmEnabled)
     }
 
@@ -110,6 +112,59 @@ class TextToolUiStateTest {
     }
 
     @Test
+    fun `draft drag changes draft overlay position`() {
+        val draggedTransform = OverlayTransform(
+            xNorm = 0.28f,
+            yNorm = 0.74f,
+            scale = 1f,
+            rotationDeg = 0f,
+            alpha = 1f
+        )
+        val state = TextToolUiState()
+            .openComposer(startMs = 500L, overlayId = OVERLAY_ID)
+            .updateDraftText("Title")
+            .updateDraftTransform(draggedTransform)
+
+        val draft = createDraftTextOverlay(
+            projectId = PROJECT_ID,
+            state = state,
+            totalDurationMs = 4_000L,
+            zIndex = 2
+        )
+
+        assertNotNull(draft)
+        requireNotNull(draft)
+        assertEquals(draggedTransform, draft.transform)
+    }
+
+    @Test
+    fun `confirm persists dragged draft position`() {
+        val draggedTransform = moveTextOverlayTransformByPreviewDelta(
+            transform = DefaultTextOverlayTransform,
+            deltaXPx = 100f,
+            deltaYPx = -80f,
+            frameWidthPx = 1_000,
+            frameHeightPx = 2_000
+        )
+        val state = TextToolUiState()
+            .openComposer(startMs = 500L, overlayId = OVERLAY_ID)
+            .updateDraftText("Title")
+            .updateDraftTransform(draggedTransform)
+
+        val overlay = createCommittedTextOverlay(
+            projectId = PROJECT_ID,
+            state = state,
+            totalDurationMs = 4_000L,
+            zIndex = 2
+        )
+
+        assertNotNull(overlay)
+        requireNotNull(overlay)
+        assertEquals(OVERLAY_ID, overlay.id)
+        assertEquals(draggedTransform, overlay.transform)
+    }
+
+    @Test
     fun `after commit returns to text row and clears draft`() {
         val state = TextToolUiState()
             .openComposer(startMs = 500L, overlayId = OVERLAY_ID)
@@ -119,6 +174,7 @@ class TextToolUiStateTest {
         assertEquals(TextToolPanel.Row, state.panel)
         assertEquals("", state.draftText)
         assertNull(state.draftOverlayId)
+        assertEquals(DefaultTextOverlayTransform, state.draftTransform)
         assertFalse(state.confirmEnabled)
     }
 

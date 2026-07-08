@@ -1,5 +1,6 @@
 package com.clipforge.ai.presentation.timeline
 
+import com.clipforge.ai.core.overlay.OverlayTransform
 import com.clipforge.ai.domain.model.TextOverlay
 import java.util.UUID
 
@@ -13,7 +14,8 @@ data class TextToolUiState(
     val panel: TextToolPanel = TextToolPanel.Hidden,
     val draftText: String = "",
     val draftStartMs: Long = 0L,
-    val draftOverlayId: String? = null
+    val draftOverlayId: String? = null,
+    val draftTransform: OverlayTransform = DefaultTextOverlayTransform
 ) {
     val confirmEnabled: Boolean
         get() = draftText.isNotBlank() && draftOverlayId != null
@@ -60,7 +62,7 @@ val textTemplateShellItems: List<String> = listOf(
 )
 
 fun TextToolUiState.openRow(): TextToolUiState =
-    copy(panel = TextToolPanel.Row, draftText = "", draftOverlayId = null)
+    copy(panel = TextToolPanel.Row, draftText = "", draftOverlayId = null, draftTransform = DefaultTextOverlayTransform)
 
 fun TextToolUiState.closeTool(): TextToolUiState =
     TextToolUiState()
@@ -73,14 +75,18 @@ fun TextToolUiState.openComposer(
         panel = TextToolPanel.Composer,
         draftText = "",
         draftStartMs = startMs.coerceAtLeast(0L),
-        draftOverlayId = overlayId
+        draftOverlayId = overlayId,
+        draftTransform = DefaultTextOverlayTransform
     )
 
 fun TextToolUiState.updateDraftText(text: String): TextToolUiState =
     copy(draftText = text)
 
+fun TextToolUiState.updateDraftTransform(transform: OverlayTransform): TextToolUiState =
+    copy(draftTransform = transform)
+
 fun TextToolUiState.afterCommit(): TextToolUiState =
-    copy(panel = TextToolPanel.Row, draftText = "", draftOverlayId = null)
+    copy(panel = TextToolPanel.Row, draftText = "", draftOverlayId = null, draftTransform = DefaultTextOverlayTransform)
 
 fun createDraftTextOverlay(
     projectId: String,
@@ -97,7 +103,7 @@ fun createDraftTextOverlay(
         totalDurationMs = totalDurationMs,
         zIndex = zIndex,
         id = overlayId
-    )
+    )?.copy(transform = state.draftTransform)
 }
 
 fun createCommittedTextOverlay(
@@ -115,5 +121,5 @@ fun createCommittedTextOverlay(
         totalDurationMs = totalDurationMs,
         zIndex = zIndex,
         id = overlayId
-    ).overlay
+    ).overlay?.copy(transform = state.draftTransform)
 }

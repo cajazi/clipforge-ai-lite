@@ -86,11 +86,13 @@ import com.clipforge.ai.core.effects.EffectCategory
 import com.clipforge.ai.core.effects.EffectReleasePolicy
 import com.clipforge.ai.core.effects.EffectScope
 import com.clipforge.ai.core.effects.ExportEffectRegistry
+import com.clipforge.ai.core.overlay.OverlayTransform
 import com.clipforge.ai.core.player.EffectPreviewController
 import com.clipforge.ai.core.transition.TransitionSpec
 import com.clipforge.ai.core.utils.TimeFormatter
 import com.clipforge.ai.domain.history.AddTextOverlayCommand
 import com.clipforge.ai.domain.history.DeleteEffectCommand
+import com.clipforge.ai.domain.history.MoveTextOverlayCommand
 import com.clipforge.ai.domain.history.SelectEffectCommand
 import com.clipforge.ai.domain.model.EffectItem
 import com.clipforge.ai.domain.model.MediaType
@@ -187,6 +189,7 @@ fun TimelineScreen(
     var showTransformSheet by remember { mutableStateOf(false) }
     var textToolState by remember { mutableStateOf(TextToolUiState()) }
     var pendingTextOverlaySelectionId by remember { mutableStateOf<String?>(null) }
+    var textOverlayTransformOverrides by remember { mutableStateOf<Map<String, OverlayTransform>>(emptyMap()) }
     var showEffectCatalogSheet by rememberSaveable { mutableStateOf(false) }
     var selectedAnimationCategory by rememberSaveable { mutableStateOf(AnimationPickerCategory.BASIC) }
     var animationPreviewRestartKey by remember { mutableLongStateOf(0L) }
@@ -208,6 +211,13 @@ fun TimelineScreen(
     val timelineTextOverlays by remember(projectId, textOverlayRepository) {
         textOverlayRepository.observeTextOverlaysForProject(projectId)
     }.collectAsState(initial = emptyList<TextOverlay>())
+    val previewCommittedTextOverlays = remember(timelineTextOverlays, textOverlayTransformOverrides) {
+        timelineTextOverlays.map { overlay ->
+            textOverlayTransformOverrides[overlay.id]?.let { transform ->
+                overlay.copy(transform = transform)
+            } ?: overlay
+        }
+    }
     val nextTextOverlayZIndex = remember(timelineTextOverlays) {
         (timelineTextOverlays.maxOfOrNull { overlay -> overlay.zIndex } ?: -1) + 1
     }
@@ -219,8 +229,11 @@ fun TimelineScreen(
             zIndex = nextTextOverlayZIndex
         )
     }
-    val previewTextOverlays = remember(timelineTextOverlays, draftTextOverlay) {
-        if (draftTextOverlay == null) timelineTextOverlays else timelineTextOverlays + draftTextOverlay
+    val previewTextOverlays = remember(previewCommittedTextOverlays, draftTextOverlay) {
+        if (draftTextOverlay == null) previewCommittedTextOverlays else previewCommittedTextOverlays + draftTextOverlay
+    }
+    val previewSelectedTextOverlayId = remember(draftTextOverlay, selectionTarget) {
+        draftTextOverlay?.id ?: selectedTextOverlayId(selectionTarget)
     }
     val clipAnimationViewModel = remember(projectId, effectRepository, historyRegistry) {
         ClipAnimationViewModel(
@@ -337,6 +350,39 @@ fun TimelineScreen(
         }
         textToolState = textToolState.afterCommit()
     }
+    fun selectPreviewTextOverlay(textOverlayId: String) {
+        if (textOverlayId == textToolState.draftOverlayId) return
+        selectionController.restore(SelectionTarget.TextOverlay(textOverlayId).toSnapshot())
+    }
+    fun updatePreviewTextOverlayTransform(textOverlayId: String, transform: OverlayTransform) {
+        if (textOverlayId == textToolState.draftOverlayId && textToolState.panel == TextToolPanel.Composer) {
+            textToolState = textToolState.updateDraftTransform(transform)
+            return
+        }
+        if (timelineTextOverlays.any { it.id == textOverlayId }) {
+            textOverlayTransformOverrides = textOverlayTransformOverrides + (textOverlayId to transform)
+        }
+    }
+    fun commitPreviewTextOverlayTransform(textOverlayId: String, transform: OverlayTransform) {
+        if (textOverlayId == textToolState.draftOverlayId && textToolState.panel == TextToolPanel.Composer) {
+            textToolState = textToolState.updateDraftTransform(transform)
+            return
+        }
+        val before = timelineTextOverlays.firstOrNull { it.id == textOverlayId } ?: return
+        if (textOverlayTransformsEquivalent(before.transform, transform)) return
+        val after = before.copy(transform = transform)
+        textOverlayTransformOverrides = textOverlayTransformOverrides + (textOverlayId to transform)
+        selectionController.restore(SelectionTarget.TextOverlay(textOverlayId).toSnapshot())
+        screenScope.launch {
+            historyRegistry.execute(
+                MoveTextOverlayCommand(
+                    repository = textOverlayRepository,
+                    before = before,
+                    after = after
+                )
+            )
+        }
+    }
 
     SideEffect {
         screenRecompositionCount++
@@ -405,6 +451,17 @@ fun TimelineScreen(
         if (timelineTextOverlays.any { it.id == pendingId }) {
             selectionController.restore(SelectionTarget.TextOverlay(pendingId).toSnapshot())
             pendingTextOverlaySelectionId = null
+        }
+    }
+    LaunchedEffect(timelineTextOverlays, textOverlayTransformOverrides) {
+        if (textOverlayTransformOverrides.isEmpty()) return@LaunchedEffect
+        val unresolved = textOverlayTransformOverrides.filterNot { (id, transform) ->
+            timelineTextOverlays.any { overlay ->
+                overlay.id == id && textOverlayTransformsEquivalent(overlay.transform, transform)
+            }
+        }
+        if (unresolved.size != textOverlayTransformOverrides.size) {
+            textOverlayTransformOverrides = unresolved
         }
     }
     LaunchedEffect(viewModel) {
@@ -678,6 +735,7 @@ fun TimelineScreen(
                     projectId = projectId,
                     clips = uiState.clips,
                     textOverlays = previewTextOverlays,
+                    selectedTextOverlayId = previewSelectedTextOverlayId,
                     clip = uiState.clips.firstOrNull { it.id == uiState.currentSegment?.clipId }
                         ?: uiState.selectedClipId?.let { selectedId -> uiState.clips.firstOrNull { it.id == selectedId } }
                         ?: uiState.clips.firstOrNull(),
@@ -695,12 +753,19 @@ fun TimelineScreen(
                     lastAddedClipId = uiState.lastAddedClipId,
                     animationPreviewRestartKey = animationPreviewRestartKey,
                     onTogglePlay = { viewModel.togglePlayback() },
+                    onSelectTextOverlay = ::selectPreviewTextOverlay,
+                    onPreviewTextOverlayTransformChanged = ::updatePreviewTextOverlayTransform,
+                    onPreviewTextOverlayTransformCommitted = ::commitPreviewTextOverlayTransform,
                     onEffectPreviewController = { effectPreviewControllerRef.value = it }
                 )
                 Spacer(Modifier.height(2.dp))
                 CapCutTransportBar(
                     isPlaying = uiState.isPlaying,
-                    onTogglePlay = { viewModel.togglePlayback() }
+                    canUndo = effectHistoryState.canUndo,
+                    canRedo = effectHistoryState.canRedo,
+                    onTogglePlay = { viewModel.togglePlayback() },
+                    onUndo = { screenScope.launch { historyRegistry.undo() } },
+                    onRedo = { screenScope.launch { historyRegistry.redo() } }
                 )
                 CapCutTimelineEditor(
                     clips = uiState.clips,
@@ -1273,6 +1338,7 @@ private fun CapCutPreviewArea(
     projectId: String,
     clips: List<ClipUiModel>,
     textOverlays: List<TextOverlay>,
+    selectedTextOverlayId: String?,
     clip: ClipUiModel?,
     segment: TimelineSegment?,
     isPlaying: Boolean,
@@ -1288,6 +1354,9 @@ private fun CapCutPreviewArea(
     lastAddedClipId: String?,
     animationPreviewRestartKey: Long,
     onTogglePlay: () -> Unit,
+    onSelectTextOverlay: (String) -> Unit,
+    onPreviewTextOverlayTransformChanged: (String, OverlayTransform) -> Unit,
+    onPreviewTextOverlayTransformCommitted: (String, OverlayTransform) -> Unit,
     onEffectPreviewController: (EffectPreviewController?) -> Unit
 ) {
     val previewClip = clip ?: clips.firstOrNull {
@@ -1309,6 +1378,7 @@ private fun CapCutPreviewArea(
     var previewPanX by remember { mutableFloatStateOf(0f) }
     var previewPanY by remember { mutableFloatStateOf(0f) }
     val latestPreviewTimeMs by rememberUpdatedState(globalTime)
+    val textOverlayGestureActive = selectedTextOverlayId != null
     val previewTransformState = rememberTransformableState { zoomChange, panChange, _ ->
         val nextZoom = (previewZoom * zoomChange).coerceIn(1f, 4f)
         previewZoom = nextZoom
@@ -1389,10 +1459,11 @@ private fun CapCutPreviewArea(
                     translationX = previewPanX
                     translationY = previewPanY
                 }
-                .transformable(previewTransformState)
-                .pointerInput(previewClip?.id, isPlaying, previewControlsVisible) {
+                .transformable(previewTransformState, enabled = !textOverlayGestureActive)
+                .pointerInput(previewClip?.id, isPlaying, previewControlsVisible, textOverlayGestureActive) {
                     detectTapGestures(
                         onDoubleTap = {
+                            if (textOverlayGestureActive) return@detectTapGestures
                             previewZoom = 1f
                             previewPanX = 0f
                             previewPanY = 0f
@@ -1400,6 +1471,7 @@ private fun CapCutPreviewArea(
                             Log.d(SCREEN_TAG, "PREVIEW_DOUBLE_TAP_FIT scale=$previewZoom panX=$previewPanX panY=$previewPanY")
                         },
                         onTap = {
+                            if (textOverlayGestureActive) return@detectTapGestures
                             previewControlsVisible = !previewControlsVisible
                             Log.d(SCREEN_TAG, "PREVIEW_CONTROLS_TOGGLE visible=$previewControlsVisible currentTimelineMs=$globalTime")
                         }
@@ -1527,6 +1599,17 @@ private fun CapCutPreviewArea(
                     .fillMaxSize()
                     .zIndex(4f)
             )
+            TextOverlayInteractionLayer(
+                textOverlays = textOverlays,
+                timelineTimeMs = globalTime,
+                selectedTextOverlayId = selectedTextOverlayId,
+                onSelectTextOverlay = onSelectTextOverlay,
+                onPreviewTransformChanged = onPreviewTextOverlayTransformChanged,
+                onTransformCommitted = onPreviewTextOverlayTransformCommitted,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(4.5f)
+            )
             if (isTransitionActive) {
                 Surface(
                     modifier = Modifier
@@ -1548,7 +1631,7 @@ private fun CapCutPreviewArea(
                 }
             }
         }
-        if (previewControlsVisible) {
+        if (previewControlsVisible && !textOverlayGestureActive) {
             Box(
                 modifier = Modifier
                     .size(58.dp)
@@ -2603,7 +2686,11 @@ private fun VideoPreviewPlayer(
 @Composable
 private fun CapCutTransportBar(
     isPlaying: Boolean,
-    onTogglePlay: () -> Unit
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onTogglePlay: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -2624,8 +2711,18 @@ private fun CapCutTransportBar(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Snap\nON", color = Color.White, fontSize = 10.sp, lineHeight = 10.sp, textAlign = TextAlign.Center)
-            Text("Undo", color = AppColors.TextSecondary, fontSize = 11.sp)
-            Text("Redo", color = AppColors.TextSecondary, fontSize = 11.sp)
+            Text(
+                "Undo",
+                color = if (canUndo) Color.White else AppColors.TextSecondary,
+                fontSize = 11.sp,
+                modifier = Modifier.clickable(enabled = canUndo, onClick = onUndo)
+            )
+            Text(
+                "Redo",
+                color = if (canRedo) Color.White else AppColors.TextSecondary,
+                fontSize = 11.sp,
+                modifier = Modifier.clickable(enabled = canRedo, onClick = onRedo)
+            )
         }
     }
 }
