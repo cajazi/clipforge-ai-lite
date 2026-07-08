@@ -29,17 +29,18 @@ class TextToolUiStateTest {
 
     @Test
     fun `add text action opens composer at playhead`() {
-        val state = TextToolUiState().openRow().openComposer(startMs = 1_250L)
+        val state = TextToolUiState().openRow().openComposer(startMs = 1_250L, overlayId = OVERLAY_ID)
 
         assertEquals(TextToolPanel.Composer, state.panel)
         assertEquals(1_250L, state.draftStartMs)
+        assertEquals(OVERLAY_ID, state.draftOverlayId)
         assertFalse(state.confirmEnabled)
     }
 
     @Test
     fun `typed draft enables confirm and creates preview-only overlay`() {
         val state = TextToolUiState()
-            .openComposer(startMs = 2_000L)
+            .openComposer(startMs = 2_000L, overlayId = OVERLAY_ID)
             .updateDraftText("  Hello  ")
 
         val draft = createDraftTextOverlay(
@@ -52,7 +53,7 @@ class TextToolUiStateTest {
         assertTrue(state.confirmEnabled)
         assertNotNull(draft)
         requireNotNull(draft)
-        assertEquals(TEXT_TOOL_DRAFT_OVERLAY_ID, draft.id)
+        assertEquals(OVERLAY_ID, draft.id)
         assertEquals("Hello", draft.renderSpec.text)
         assertEquals(2_000L, draft.windowStartMs)
         assertEquals(4, draft.zIndex)
@@ -61,7 +62,7 @@ class TextToolUiStateTest {
     @Test
     fun `blank draft does not create preview or committed overlay`() {
         val state = TextToolUiState()
-            .openComposer(startMs = 0L)
+            .openComposer(startMs = 0L, overlayId = OVERLAY_ID)
             .updateDraftText("   ")
 
         assertNull(createDraftTextOverlay(PROJECT_ID, state, totalDurationMs = 10_000L, zIndex = 0))
@@ -69,11 +70,27 @@ class TextToolUiStateTest {
     }
 
     @Test
-    fun `committed overlay uses real generated id instead of draft id`() {
+    fun `each composer open gets a fresh overlay id`() {
+        val first = TextToolUiState().openComposer(startMs = 500L).draftOverlayId
+        val second = TextToolUiState().openComposer(startMs = 500L).draftOverlayId
+
+        assertNotNull(first)
+        assertNotNull(second)
+        assertNotEquals(first, second)
+    }
+
+    @Test
+    fun `draft and committed overlay reuse the same per-open id`() {
         val state = TextToolUiState()
-            .openComposer(startMs = 500L)
+            .openComposer(startMs = 500L, overlayId = OVERLAY_ID)
             .updateDraftText("Title")
 
+        val draft = createDraftTextOverlay(
+            projectId = PROJECT_ID,
+            state = state,
+            totalDurationMs = 4_000L,
+            zIndex = 2
+        )
         val overlay = createCommittedTextOverlay(
             projectId = PROJECT_ID,
             state = state,
@@ -82,8 +99,11 @@ class TextToolUiStateTest {
         )
 
         assertNotNull(overlay)
+        assertNotNull(draft)
+        requireNotNull(draft)
         requireNotNull(overlay)
-        assertNotEquals(TEXT_TOOL_DRAFT_OVERLAY_ID, overlay.id)
+        assertEquals(OVERLAY_ID, draft.id)
+        assertEquals(draft.id, overlay.id)
         assertEquals("Title", overlay.renderSpec.text)
         assertEquals(500L, overlay.windowStartMs)
         assertEquals(2, overlay.zIndex)
@@ -92,28 +112,31 @@ class TextToolUiStateTest {
     @Test
     fun `after commit returns to text row and clears draft`() {
         val state = TextToolUiState()
-            .openComposer(startMs = 500L)
+            .openComposer(startMs = 500L, overlayId = OVERLAY_ID)
             .updateDraftText("Title")
             .afterCommit()
 
         assertEquals(TextToolPanel.Row, state.panel)
         assertEquals("", state.draftText)
+        assertNull(state.draftOverlayId)
         assertFalse(state.confirmEnabled)
     }
 
     @Test
-    fun `disabled text row items stay disabled and only add text is functional`() {
+    fun `non add text row items stay visually enabled and route to coming soon`() {
         val enabled = textToolRowActions.filter { it.enabled }.map { it.label }
-        val disabled = textToolRowActions.filterNot { it.enabled }.map { it.label }
 
-        assertEquals(listOf("Back", "Add text"), enabled)
-        assertTrue(disabled.containsAll(listOf("Auto Captions", "Stickers", "Draw", "Text template", "Text to audio", "Auto lyrics")))
+        assertEquals(textToolRowActions.map { it.label }, enabled)
+        assertEquals(
+            listOf("Auto Captions", "Stickers", "Draw", "Text template", "Text to audio", "Auto lyrics"),
+            comingSoonTextToolLabels
+        )
     }
 
     @Test
     fun `commit path adds lane overlay selects it and undo redo keeps one row`() = runBlocking {
         val state = TextToolUiState()
-            .openComposer(startMs = 1_000L)
+            .openComposer(startMs = 1_000L, overlayId = OVERLAY_ID)
             .updateDraftText("Caption")
         val overlay = requireNotNull(
             createCommittedTextOverlay(
@@ -137,6 +160,28 @@ class TextToolUiStateTest {
         assertEquals(emptyList<TextOverlay>(), repository.getTextOverlaysForProject(PROJECT_ID))
 
         registry.redo()
+        assertEquals(listOf(overlay), repository.getTextOverlaysForProject(PROJECT_ID))
+        assertEquals(OVERLAY_ID, repository.getTextOverlaysForProject(PROJECT_ID).single().id)
+    }
+
+    @Test
+    fun `stable commit id does not duplicate overlay rows`() = runBlocking {
+        val state = TextToolUiState()
+            .openComposer(startMs = 1_000L, overlayId = OVERLAY_ID)
+            .updateDraftText("Caption")
+        val overlay = requireNotNull(
+            createCommittedTextOverlay(
+                projectId = PROJECT_ID,
+                state = state,
+                totalDurationMs = 10_000L,
+                zIndex = 0
+            )
+        )
+        val repository = FakeTextOverlayRepository()
+
+        repository.upsertTextOverlay(overlay)
+        repository.upsertTextOverlay(overlay)
+
         assertEquals(listOf(overlay), repository.getTextOverlaysForProject(PROJECT_ID))
     }
 
@@ -168,5 +213,6 @@ class TextToolUiStateTest {
 
     private companion object {
         const val PROJECT_ID = "project"
+        const val OVERLAY_ID = "8b5d9772-d083-42b5-b648-7755386a2c5e"
     }
 }

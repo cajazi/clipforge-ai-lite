@@ -169,7 +169,6 @@ fun TimelineScreen(
     projectId: String,
     onBack: () -> Unit,
     onExport: () -> Unit = {},
-    onAddText: (() -> Unit)?       = null,
     onAddMusic: (() -> Unit)?      = null,
     onAddOverlay: (() -> Unit)?    = null,
     onAddTransition: (() -> Unit)? = null,
@@ -616,12 +615,15 @@ fun TimelineScreen(
                     onConfirm = ::commitTextComposer,
                     onBack = { textToolState = textToolState.openRow() },
                     onClose = { textToolState = textToolState.closeTool() },
-                    modifier = Modifier.navigationBarsPadding()
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .imePadding()
                 )
             } else if (textToolState.panel == TextToolPanel.Row) {
                 TextToolRow(
                     onBack = { textToolState = textToolState.closeTool() },
                     onAddText = ::openTextComposer,
+                    onComingSoon = { label -> comingSoonTool = label },
                     modifier = Modifier.navigationBarsPadding()
                 )
             } else {
@@ -4121,6 +4123,7 @@ private fun TimelineToolbarButton(tool: TimelineToolbarTool) {
 private fun TextToolRow(
     onBack: () -> Unit,
     onAddText: () -> Unit,
+    onComingSoon: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -4139,7 +4142,7 @@ private fun TextToolRow(
                 onClick = when (action.label) {
                     "Back" -> onBack
                     "Add text" -> onAddText
-                    else -> null
+                    else -> ({ onComingSoon(action.label) })
                 }
             )
         }
@@ -5142,36 +5145,6 @@ private fun TransformSheet(initialTransform: ClipTransform, onApply: (ClipTransf
 private fun TransformSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
     Text("$label ${value.roundToInt()}", color = AppColors.TextSecondary, fontSize = 12.sp)
     Slider(value = value, onValueChange = onValueChange, valueRange = range)
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TextOverlaySheet(onApply: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1B1B1F)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp)) {
-            Text("Add text", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Enter text") },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = AppColors.Primary,
-                    unfocusedBorderColor = Color(0xFF56565C)
-                )
-            )
-            Spacer(Modifier.height(14.dp))
-            Button(onClick = { onApply(text) }, modifier = Modifier.fillMaxWidth(), enabled = text.isNotBlank()) {
-                Text("Add")
-            }
-            Spacer(Modifier.height(18.dp))
-        }
-    }
 }
 
 @Composable
